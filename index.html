@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lucky Draw</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="icon" href="favicon.ico">
+</head>
+
+<body>
+    <script src="confetti.js"></script>
+    <div class="confetti" id="confetti"></div>
+    <div class="float-container">
+        <!-- <h1 onclick="toggleNameList()">Lucky Draw</h1> -->
+
+        <div class="float-child">
+            <div class="">
+                <div class="">
+                    <h1 id="prizeHeader">Prize #?</h1>
+                    <img id="slides" class="slide" src="" alt="Slide image">
+                    <div style="justify-content: center;flex-direction: column;">
+                        <h1 id="prize_desc">prize item</h1>
+                        <div style="display:flex;justify-content: center;">
+                            <button id="previousButton" onclick="previous()" style="width:100px">Previous</button>
+                            <button id="nextButton" onclick="next()" style="width:100px">Next</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="float-child" style="display:flex;flex-direction: column;">
+            <h1>Lucky Draw</h1>
+
+            <div class="roulette" id="roulette">
+                <div id="rouletteContent"></div>
+            </div>
+            </br>
+            <button id="drawButton" onclick="drawWinner()" style="width:100%;margin:0px">Draw Winner</button>
+            </br>
+
+            <div>
+                <!-- <input type="text" id="nameInput" placeholder="Enter name">
+                <button onclick="deleteName()">Remove Winner</button> -->
+                <input type="file" id="fileinput" stlye="" />
+            </div>
+        </div>
+
+        <div class="float-child" style="display:flex;flex-direction: column;justify-content: space-between;">
+            <h1>Winners</h1>
+            <div id="winnerList">
+            </div>
+            <div class="buttonContainer">
+                <button disabled id="downloadButton" onclick="downloadOutput()">Download winners</button>
+            </div>
+        </div>
+    </div>
+    <script src="common.js"></script>
+</body>
+
+</html>

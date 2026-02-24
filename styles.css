@@ -1,0 +1,179 @@
+body {
+    font-family: Arial, sans-serif;
+    display: flex;
+    /* justify-content: center; */
+    align-items: center;
+    height: 100vh;
+    margin: 0;
+    position: relative;
+    background: url('background.jpg') no-repeat center center fixed;
+    background-size: cover;
+    overflow: hidden;
+}
+
+input,
+button {
+    margin: 10px;
+    padding: 10px;
+    font-size: 16px;
+    border-radius: 10px;
+    border-color: rgba(0, 0, 0, 0.1);
+    position: relative;
+    z-index:2;
+}
+
+#nameList {
+    margin-top: 20px;
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.roulette {
+    margin-top: 8%;
+    height: 150px;
+    /* Increased height */
+    overflow: hidden;
+    position: relative;
+    border: 2px solid #ccc;
+    border-radius: 5px;
+}
+
+#rouletteContent {
+    position: absolute;
+    width: 100%;
+    height: auto;
+    display: flex;
+    flex-direction: column;
+}
+
+#rouletteContent p {
+    margin: 0;
+    text-align: center;
+    font-size: 60px;
+    color: #333;
+    height: 150px; /* This should match itemHeight */
+    line-height: 150px; /* Align text vertically */
+    white-space: nowrap;
+}
+
+table {
+    width: 100%;
+}
+
+input[type="file"] {
+    height: 43px;
+    border-radius: 10px;
+    border-color: rgba(0, 0, 0, 0.1)
+}
+
+input[type="file"]::-webkit-file-upload-button {
+    height: 43px;
+    border-radius: 10px;
+    border-color: rgba(0, 0, 0, 0.1)
+}
+
+/* Confetti effect */
+@keyframes confetti {
+    0% {
+        transform: translateY(0);
+    }
+
+    100% {
+        transform: translateY(100vh);
+    }
+}
+
+.confetti div {
+    position: absolute;
+    width: 15px;
+    height: 15px;
+    background: #ff0;
+    opacity: 0.8;
+    border-radius: 50%;
+    animation: confetti 3s infinite;
+}
+
+.confetti div:nth-child(odd) {
+    background: #f0f;
+    width: 12px;
+    height: 12px;
+}
+
+.confetti div:nth-child(2n) {
+    background: #0ff;
+    width: 8px;
+    height: 8px;
+}
+
+.confetti div:nth-child(3n) {
+    background: #f00;
+    width: 6px;
+    height: 6px;
+}
+
+.confetti div:nth-child(4n) {
+    background: #0f0;
+    width: 10px;
+    height: 10px;
+}
+
+.confetti div:nth-child(5n) {
+    background: #00f;
+    width: 14px;
+    height: 14px;
+}
+
+.slide {
+    animation: fadeIn 2s;
+    -webkit-animation: fadeIn 2s;
+    -moz-animation: fadeIn 2s;
+    -o-animation: fadeIn 2s;
+    -ms-animation: fadeIn 2s;
+}
+
+#slides {
+    max-width: 70%;
+    display: block;
+    margin-left: auto;
+    margin-right: auto;
+    width: 70%;
+    height: 280px;
+}
+
+@keyframes fadeIn {
+    0% { opacity: 0; }
+    100% { opacity: 1; }
+}
+
+.float-container {
+    padding: 20px;
+    margin-left:auto;
+    margin-right:auto;
+    width:90%;
+    display:flex;
+    text-align: center;
+    background: rgba(220, 220, 220, 0.8);
+    padding: 20px;
+    border-radius: 10px;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+    z-index: 2;
+}
+
+.float-child {
+    width: 30%;
+    /* float: left; */
+    padding: 20px;
+}  
+
+.buttonContainer {
+    bottom: 0px;
+    margin: 0px;
+    width: 100%;
+    justify-content: center;
+    display: flex;
+    align-items: flex-end;
+}
+
+#winnerList {
+    height: 100%;
+}
