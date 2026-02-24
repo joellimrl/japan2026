@@ -4,60 +4,45 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Lucky Draw</title>
+    <title>Japan 2026 Itinerary</title>
     <link rel="stylesheet" href="styles.css">
-    <link rel="icon" href="favicon.ico">
+    <link rel="stylesheet" href="https://unpkg.com/maplibre-gl/dist/maplibre-gl.css">
+    <link rel="icon" href="favicon.svg" type="image/svg+xml">
 </head>
 
 <body>
-    <script src="confetti.js"></script>
-    <div class="confetti" id="confetti"></div>
-    <div class="float-container">
-        <!-- <h1 onclick="toggleNameList()">Lucky Draw</h1> -->
+    <div class="layout">
+        <aside class="sidebar">
+            <header class="sidebarHeader">
+                <h1>Japan 2026</h1>
+                <p class="muted">Itinerary viewer (Apr–May)</p>
+            </header>
 
-        <div class="float-child">
-            <div class="">
-                <div class="">
-                    <h1 id="prizeHeader">Prize #?</h1>
-                    <img id="slides" class="slide" src="" alt="Slide image">
-                    <div style="justify-content: center;flex-direction: column;">
-                        <h1 id="prize_desc">prize item</h1>
-                        <div style="display:flex;justify-content: center;">
-                            <button id="previousButton" onclick="previous()" style="width:100px">Previous</button>
-                            <button id="nextButton" onclick="next()" style="width:100px">Next</button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
+            <section class="panel">
+                <h2>Map</h2>
+                <p class="muted">OpenFreeMap vector tiles via MapLibre GL JS. No API key required.</p>
+            </section>
 
-        <div class="float-child" style="display:flex;flex-direction: column;">
-            <h1>Lucky Draw</h1>
+            <section class="panel">
+                <h2>Day by day</h2>
+                <div id="itinerary"></div>
+            </section>
+        </aside>
 
-            <div class="roulette" id="roulette">
-                <div id="rouletteContent"></div>
-            </div>
-            </br>
-            <button id="drawButton" onclick="drawWinner()" style="width:100%;margin:0px">Draw Winner</button>
-            </br>
+        <main class="mapArea">
+            <div id="map"></div>
+        </main>
 
-            <div>
-                <!-- <input type="text" id="nameInput" placeholder="Enter name">
-                <button onclick="deleteName()">Remove Winner</button> -->
-                <input type="file" id="fileinput" stlye="" />
-            </div>
-        </div>
-
-        <div class="float-child" style="display:flex;flex-direction: column;justify-content: space-between;">
-            <h1>Winners</h1>
-            <div id="winnerList">
-            </div>
-            <div class="buttonContainer">
-                <button disabled id="downloadButton" onclick="downloadOutput()">Download winners</button>
-            </div>
-        </div>
+        <aside class="rightbar">
+            <section class="panel">
+                <h2>Bookings checklist</h2>
+                <div id="bookings"></div>
+            </section>
+        </aside>
     </div>
-    <script src="common.js"></script>
+
+    <script src="https://unpkg.com/maplibre-gl/dist/maplibre-gl.js"></script>
+    <script src="app.js"></script>
 </body>
 
 </html>

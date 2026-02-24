@@ -1,78 +1,25 @@
-# Lucky Draw Static Web Page
+# Japan 2026 Itinerary Viewer
 
-A simple web-based lucky draw application for conducting random prize drawings.
+Static site (GitHub Pages-friendly) that shows a Japan hotel itinerary on an OpenStreetMap-backed map with markers and travel legs.
 
-## Demo
+## What it shows
 
-🎯 **Live Demo**: [https://joellimrl.github.io/luckyDraw/](https://joellimrl.github.io/luckyDraw/)
+- 25–28 Apr 2026 — LIBER HOTEL Osaka
+- 28–30 Apr 2026 — Umekoji Kodensho (Kyoto)
+- 30 Apr–3 May 2026 — remm plus Kobe
+- 3–6 May 2026 — Hiyori Namba (Osaka)
 
-![Lucky Draw Screenshot](screenshot.png)
+## Map tech
 
-## Features
+This page uses:
 
-- Upload participant lists via CSV file
-- Random winner selection with visual cycling animation
-- Prize management with images and descriptions
-- Winner tracking and download functionality
-- Customizable background and prize images
+- **MapLibre GL JS** (client-side vector map renderer)
+- **OpenFreeMap** vector tiles/styles (free, no API keys)
 
-## Setup
+Basemap labels: the default OpenFreeMap style can show bilingual labels (latin + local script). The app overrides label rendering to prefer English/latin names and avoid Japanese/non‑Latin labels.
 
-Before using the application, configure the following:
+Note: OpenStreetMap provides map data/tiles, but **not** public-transport directions by itself. This site currently draws a simple line connecting the stops (straight between coordinates). If you want real transit routing, you’ll need to integrate a separate routing engine/API (e.g., OpenTripPlanner).
 
-### 1. Prize Images
-- Add prize images to the `images/` folder
-- Supported formats: JPG, PNG, GIF
+## Edit the itinerary
 
-### 2. Configure Prizes
-Edit `common.js` and update these arrays:
-- `allImages`: Array of image filenames (must match files in images folder)
-- `allPrizeText`: Array of prize descriptions
-
-**Important:** Both arrays must have the same length and corresponding order.
-
-### 3. Background Image (Optional)
-- Replace `background.jpg` with your custom background image
-- Image will be used as the page background
-
-## How to Use
-
-### Step 1: Prepare Participants
-1. Create a CSV file with participant names (see `sample.csv` for format)
-2. Upload the CSV file using the file upload button
-
-### Step 2: Conduct Lucky Draw
-1. Click **Draw Winner** to start the selection process
-2. Watch as names cycle through before selecting a random winner
-3. The winner appears in the right panel with their prize
-4. Click **Next** to proceed to the next prize draw
-
-### Step 3: Manage Results
-- Use **Download winners** to save results as `output.json`
-- The JSON file can be re-uploaded to restore previous winner data
-
-## Important Notes
-
-- ⚠️ **Refresh Warning**: Refreshing the page will clear all current winners. Always download results first!
-- Winners are automatically removed from the participant pool after selection
-
-## File Structure
-
-```
-luckyDraw/
-├── index.html          # Main application page
-├── common.js           # Configuration and logic
-├── sample.csv          # Example participant list format
-├── background.jpg      # Background image (optional)
-├── images/            # Prize images folder
-└── README.md          # This file
-```
-
-## CSV Format
-
-Your participant CSV should have one name per line:
-```
-John Doe
-Jane Smith
-Bob Johnson
-```
+Update the stops (names, dates, coordinates, notes) in [app.js](app.js) (`ITINERARY`).
