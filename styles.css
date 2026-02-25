@@ -29,16 +29,6 @@ body {
     overflow-y: auto;
 }
 
-.rightbar {
-    width: 360px;
-    min-width: 320px;
-    max-width: 480px;
-    background: #ffffff;
-    border-left: 1px solid #e6e6e6;
-    padding: 14px;
-    overflow-y: auto;
-}
-
 .sidebarHeader h1 {
     margin: 0;
     font-size: 20px;
@@ -75,6 +65,12 @@ body {
     border-radius: 10px;
     border: 1px solid #d0d0d0;
     font-size: 14px;
+}
+
+/* Visually mask the key without using type="password" (reduces password-manager interference). */
+.keyForm input.maskedInput {
+    -webkit-text-security: disc;
+    text-security: disc;
 }
 
 .keyButtons {
@@ -257,45 +253,6 @@ button.secondary {
     width: 100%;
 }
 
-.checklist {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-}
-
-.checkSummary {
-    margin-bottom: 6px;
-}
-
-.checkItem {
-    display: flex;
-    gap: 10px;
-    align-items: flex-start;
-    padding: 10px;
-    border: 1px solid #e6e6e6;
-    border-radius: 10px;
-}
-
-.checkItem.done {
-    background: #f6f6f6;
-}
-
-.checkItem input {
-    margin-top: 2px;
-}
-
-.checkTitle {
-    font-weight: 700;
-    font-size: 13px;
-    color: #333;
-}
-
-.checkMeta {
-    margin-top: 4px;
-    font-size: 12px;
-    color: #666;
-}
-
 .stopItem {
     padding: 10px;
     border: 1px solid #e6e6e6;
@@ -346,11 +303,6 @@ button.secondary {
 
 @media (max-width: 860px) {
     .sidebar {
-        width: 320px;
-        min-width: 280px;
-    }
-
-    .rightbar {
         width: 320px;
         min-width: 280px;
     }

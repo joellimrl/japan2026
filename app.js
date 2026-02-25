@@ -4,199 +4,61 @@
   - Forces basemap labels to prefer English/Latin (no Japanese labels)
 */
 
-const STOPS = [
-  {
-    id: 'liber-osaka',
-    name: 'LIBER HOTEL Osaka',
-    city: 'Osaka',
-    dates: '25–28 Apr 2026',
-    position: { lat: 34.6656, lng: 135.4322 },
-    details: 'Universal City / USJ area.'
-  },
-  {
-    id: 'umekoji-kyoto',
-    name: 'Umekoji Kodensho (Kyoto)',
-    city: 'Kyoto',
-    dates: '28–30 Apr 2026',
-    position: { lat: 34.9852, lng: 135.7458 },
-    details: 'Umekoji Park / Kyoto Railway Museum area.'
-  },
-  {
-    id: 'remm-kobe',
-    name: 'remm plus Kobe',
-    city: 'Kobe',
-    dates: '30 Apr–3 May 2026',
-    position: { lat: 34.6943, lng: 135.1956 },
-    details: 'Sannomiya area (approx.).'
-  },
-  {
-    id: 'hiyori-namba',
-    name: 'Hiyori Namba (Osaka)',
-    city: 'Osaka',
-    dates: '3–6 May 2026',
-    position: { lat: 34.6646, lng: 135.5019 },
-    details: 'Namba area.'
-  }
-];
+const COLLECTION_NAME = 'japan2026';
+const KEY_STORAGE_KEY = 'japan2026-key-v1';
+const PROD_API_BASE = 'https://streetbot.fly.dev';
 
-// Key places referenced in the day-by-day plan.
-// Coordinates are approximate and meant for map context (not navigation).
-const POIS = {
-  kix: {
-    id: 'kix',
-    name: 'Kansai International Airport (KIX)',
-    position: { lat: 34.4347, lng: 135.2440 },
-    details: 'Arrival/departure airport.'
-  },
-  usj: {
-    id: 'usj',
-    name: 'Universal Studios Japan (USJ)',
-    position: { lat: 34.6654, lng: 135.4323 },
-    details: 'Theme park (approx.).'
-  },
-  kyoto_station: {
-    id: 'kyoto_station',
-    name: 'Kyoto Station',
-    position: { lat: 34.9858, lng: 135.7587 },
-    details: 'Main rail hub (approx.).'
-  },
-  gion: {
-    id: 'gion',
-    name: 'Gion (kimono rental area)',
-    position: { lat: 35.0037, lng: 135.7788 },
-    details: 'Good base area for kimono rental (approx.).'
-  },
-  sannomiya: {
-    id: 'sannomiya',
-    name: 'Sannomiya (Kobe)',
-    position: { lat: 34.6947, lng: 135.1950 },
-    details: 'Central area (approx.).'
-  },
-  mouriya: {
-    id: 'mouriya',
-    name: 'Mouriya (Kobe beef)',
-    position: { lat: 34.6946, lng: 135.1941 },
-    details: 'Lunch option (approx.).'
-  },
-  wakkoqu: {
-    id: 'wakkoqu',
-    name: 'Wakkoqu (Kobe beef)',
-    position: { lat: 34.6938, lng: 135.1950 },
-    details: 'Lunch option (approx.).'
-  },
-  namba_station: {
-    id: 'namba_station',
-    name: 'Namba Station area',
-    position: { lat: 34.6670, lng: 135.5015 },
-    details: 'Transit hub (approx.).'
-  },
-  round1_namba: {
-    id: 'round1_namba',
-    name: 'Round1 Namba',
-    position: { lat: 34.6681, lng: 135.5016 },
-    details: 'Arcade/bowling complex (approx.).'
+function isLocalDevHost() {
+  try {
+    const host = String(window.location && window.location.hostname ? window.location.hostname : '');
+    return host === 'localhost' || host === '127.0.0.1';
+  } catch {
+    return false;
   }
-};
+}
 
-const DAYS = [
-  {
-    date: '25 Apr 2026',
-    stopId: 'liber-osaka',
-    summary: 'Land at KIX → public transport to hotel → check-in.',
-    poiIds: ['kix']
-  },
-  {
-    date: '26 Apr 2026',
-    stopId: 'liber-osaka',
-    summary: 'Chill day. USJ from ~3pm onwards (buy 1.5-day ticket).',
-    poiIds: ['usj']
-  },
-  {
-    date: '27 Apr 2026',
-    stopId: 'liber-osaka',
-    summary: 'Full day at USJ.',
-    poiIds: ['usj']
-  },
-  {
-    date: '28 Apr 2026',
-    stopId: 'umekoji-kyoto',
-    summary: 'Checkout → travel to Kyoto → check-in at Umekoji.',
-    poiIds: ['kyoto_station']
-  },
-  {
-    date: '29 Apr 2026',
-    stopId: 'umekoji-kyoto',
-    summary: 'Explore Kyoto. Rent kimono etc.',
-    poiIds: ['gion']
-  },
-  {
-    date: '30 Apr 2026',
-    stopId: 'remm-kobe',
-    summary: 'Checkout → travel to Kobe → check-in at remm plus Kobe.',
-    poiIds: ['sannomiya']
-  },
-  {
-    date: '1 May 2026',
-    stopId: 'remm-kobe',
-    summary: 'Explore Kobe. Book higher-end Kobe beef lunch (Wakkoqu or Mouriya).',
-    poiIds: ['mouriya', 'wakkoqu']
-  },
-  {
-    date: '2 May 2026',
-    stopId: 'remm-kobe',
-    summary: 'Explore Kobe more.',
-    poiIds: []
-  },
-  {
-    date: '3 May 2026',
-    stopId: 'hiyori-namba',
-    summary: 'Checkout → travel to Osaka → check-in at Hiyori Namba.',
-    poiIds: ['namba_station']
-  },
-  {
-    date: '4 May 2026',
-    stopId: 'hiyori-namba',
-    summary: 'Explore Osaka main city area. Go to Round1 Namba.',
-    poiIds: ['round1_namba']
-  },
-  {
-    date: '5 May 2026',
-    stopId: 'hiyori-namba',
-    summary: 'More exploring and shopping.',
-    poiIds: []
-  },
-  {
-    date: '6 May 2026',
-    stopId: 'hiyori-namba',
-    summary: 'Public transport to KIX → fly back.',
-    poiIds: ['kix']
+// Local dev server proxies /api/* -> PROD_API_BASE/* to bypass CORS.
+// GitHub Pages uses PROD_API_BASE directly.
+const API_BASE = isLocalDevHost() ? '/api' : PROD_API_BASE;
+const AUTH_HEADER_NAME = ['x', '-', 'auth'].join('');
+
+// Japan-wide default (blank map state)
+const DEFAULT_CENTER = { lng: 138.2529, lat: 36.2048 };
+const DEFAULT_ZOOM = 4.6;
+
+function parsePlaceKey(key) {
+  const raw = String(key || '');
+  const stopPrefix = 'stop:';
+  const poiPrefix = 'poi:';
+  if (raw.startsWith(stopPrefix)) {
+    return { type: 'stop', id: raw.slice(stopPrefix.length) };
   }
-];
-
-const PLANNED_DATES_INDEX = buildPlannedDatesIndex();
-
-const BOOKING_ITEMS = [
-  {
-    id: 'usj_tickets',
-    title: 'USJ tickets (1.5-day)',
-    meta: 'Buy on 26 Apr (after ~3pm entry) for 26–27 Apr.'
-  },
-  {
-    id: 'usj_express',
-    title: 'USJ Express Pass (optional)',
-    meta: 'Optional, depending on crowds + your must-rides.'
-  },
-  {
-    id: 'kimono_rental',
-    title: 'Kimono rental booking (Kyoto)',
-    meta: 'Plan for 29 Apr.'
-  },
-  {
-    id: 'kobe_beef',
-    title: 'Kobe beef lunch reservation',
-    meta: '1 May — choose Wakkoqu or Mouriya.'
+  if (raw.startsWith(poiPrefix)) {
+    return { type: 'poi', id: raw.slice(poiPrefix.length) };
   }
-];
+  return null;
+}
+
+function parseDayKey(key) {
+  const raw = String(key || '');
+  const dayPrefix = 'day:';
+  if (raw.startsWith(dayPrefix)) {
+    return { type: 'day', id: raw.slice(dayPrefix.length) };
+  }
+  return null;
+}
+// Places are embedded in this file (fully static).
+/** @type {any[]} */
+let stops = [];
+/** @type {Record<string, any>} */
+let pois = {};
+
+// Day-by-day itinerary is embedded in this file.
+/** @type {any[]} */
+let days = [];
+
+/** @type {{ stopDates: Map<string, Set<string>>, poiDates: Map<string, Set<string>> }} */
+let plannedDatesIndex = buildPlannedDatesIndex([]);
 
 /** @type {any} */
 let map = null;
@@ -218,8 +80,6 @@ let focusedDayIndex = null;
 const TRANSIT_ROUTE_SOURCE_ID = 'japan2026-transit-route';
 const TRANSIT_ROUTE_LAYER_ID = 'japan2026-transit-route-line';
 
-const STORAGE_KEY = 'japan2026-bookings-v1';
-
 function qs(id) {
   const el = document.getElementById(id);
   if (!el) {
@@ -229,11 +89,11 @@ function qs(id) {
 }
 
 function getStopById(id) {
-  return STOPS.find((s) => s.id === id) || null;
+  return stops.find((s) => s.id === id) || null;
 }
 
 function getPoiById(id) {
-  return POIS[id] || null;
+  return pois[id] || null;
 }
 
 let sidebarEventsBound = false;
@@ -241,7 +101,17 @@ let sidebarEventsBound = false;
 function renderSidebar() {
   const container = qs('itinerary');
 
-  const daysHtml = DAYS.map((day, dayIndex) => {
+  const dayPanel = document.getElementById('dayPanel');
+  if (dayPanel) {
+    dayPanel.hidden = !Array.isArray(days) || days.length === 0;
+  }
+
+  if (!Array.isArray(days) || days.length === 0) {
+    container.innerHTML = '';
+    return;
+  }
+
+  const daysHtml = days.map((day, dayIndex) => {
     const stop = getStopById(day.stopId);
     const stopLabel = stop ? stop.name : '';
 
@@ -296,7 +166,7 @@ function renderSidebar() {
       }
 
       const dayIndex = Number(idxRaw);
-      if (!Number.isInteger(dayIndex) || dayIndex < 0 || dayIndex >= DAYS.length) {
+      if (!Number.isInteger(dayIndex) || dayIndex < 0 || dayIndex >= days.length) {
         return;
       }
 
@@ -312,9 +182,13 @@ function focusDay(dayIndex) {
     return;
   }
 
+  if (!Array.isArray(days) || dayIndex < 0 || dayIndex >= days.length) {
+    return;
+  }
+
   setFocusedDay(dayIndex);
 
-  const day = DAYS[dayIndex];
+  const day = days[dayIndex];
   const stop = getStopById(day.stopId);
   if (!stop) {
     return;
@@ -334,7 +208,7 @@ function focusDay(dayIndex) {
 function setFocusedDay(dayIndex) {
   focusedDayIndex = dayIndex;
 
-  const day = DAYS[dayIndex];
+  const day = days[dayIndex];
   if (!day) {
     clearFocusedDay();
     return;
@@ -488,12 +362,12 @@ function applyTransitRoute(transit) {
 }
 
 function getTransitLegForDay(dayIndex) {
-  const day = DAYS[dayIndex];
+  const day = days[dayIndex];
   if (!day) {
     return null;
   }
 
-  const lastDayIndex = DAYS.length - 1;
+  const lastDayIndex = days.length - 1;
 
   // Special-case: first and last day should show KIX ↔ hotel route if KIX is part of that day's POIs.
   if ((dayIndex === 0 || dayIndex === lastDayIndex) && Array.isArray(day.poiIds) && day.poiIds.includes('kix')) {
@@ -514,7 +388,7 @@ function getTransitLegForDay(dayIndex) {
     }
   }
 
-  const prevDay = dayIndex > 0 ? DAYS[dayIndex - 1] : null;
+  const prevDay = dayIndex > 0 ? days[dayIndex - 1] : null;
 
   if (!prevDay) {
     return null;
@@ -570,13 +444,13 @@ function getDayFocusPoints(day, { transit }) {
   return unique;
 }
 
-function buildPlannedDatesIndex() {
+function buildPlannedDatesIndex(sourceDays) {
   /** @type {Map<string, Set<string>>} */
   const stopDates = new Map();
   /** @type {Map<string, Set<string>>} */
   const poiDates = new Map();
 
-  for (const day of DAYS) {
+  for (const day of sourceDays || []) {
     if (day.stopId) {
       if (!stopDates.has(day.stopId)) {
         stopDates.set(day.stopId, new Set());
@@ -596,36 +470,50 @@ function buildPlannedDatesIndex() {
 }
 
 function parseDayDate(dateStr) {
-  // Expected format: "25 Apr 2026" (English month abbreviations)
-  const match = String(dateStr).trim().match(/^(\d{1,2})\s+([A-Za-z]{3})\s+(\d{4})$/);
-  if (!match) {
-    return null;
+  const raw = String(dateStr).trim();
+
+  // Format A: "25 Apr 2026" (English month abbreviations)
+  const matchA = raw.match(/^(\d{1,2})\s+([A-Za-z]{3})\s+(\d{4})$/);
+  if (matchA) {
+    const day = Number(matchA[1]);
+    const monthRaw = matchA[2].toLowerCase();
+    const year = Number(matchA[3]);
+    const monthIndex = {
+      jan: 0,
+      feb: 1,
+      mar: 2,
+      apr: 3,
+      may: 4,
+      jun: 5,
+      jul: 6,
+      aug: 7,
+      sep: 8,
+      oct: 9,
+      nov: 10,
+      dec: 11
+    }[monthRaw];
+
+    if (!Number.isFinite(day) || !Number.isFinite(year) || monthIndex == null) {
+      return null;
+    }
+
+    // Use noon local time to avoid DST edge cases.
+    return new Date(year, monthIndex, day, 12, 0, 0, 0);
   }
 
-  const day = Number(match[1]);
-  const monthRaw = match[2].toLowerCase();
-  const year = Number(match[3]);
-  const monthIndex = {
-    jan: 0,
-    feb: 1,
-    mar: 2,
-    apr: 3,
-    may: 4,
-    jun: 5,
-    jul: 6,
-    aug: 7,
-    sep: 8,
-    oct: 9,
-    nov: 10,
-    dec: 11
-  }[monthRaw];
-
-  if (!Number.isFinite(day) || !Number.isFinite(year) || monthIndex == null) {
-    return null;
+  // Format B: ISO "2026-04-25"
+  const matchB = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (matchB) {
+    const year = Number(matchB[1]);
+    const month = Number(matchB[2]);
+    const day = Number(matchB[3]);
+    if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) {
+      return null;
+    }
+    return new Date(year, month - 1, day, 12, 0, 0, 0);
   }
 
-  // Use noon local time to avoid DST edge cases.
-  return new Date(year, monthIndex, day, 12, 0, 0, 0);
+  return null;
 }
 
 function formatDateRangeShort(start, end) {
@@ -672,7 +560,7 @@ function formatPlannedDatesShort(dateStrings) {
 }
 
 function getPlannedDatesForStop(stopId) {
-  const set = PLANNED_DATES_INDEX.stopDates.get(stopId);
+  const set = plannedDatesIndex.stopDates.get(stopId);
   if (!set) {
     return [];
   }
@@ -680,7 +568,7 @@ function getPlannedDatesForStop(stopId) {
 }
 
 function getPlannedDatesForPoi(poiId) {
-  const set = PLANNED_DATES_INDEX.poiDates.get(poiId);
+  const set = plannedDatesIndex.poiDates.get(poiId);
   if (!set) {
     return [];
   }
@@ -791,6 +679,14 @@ function setEnglishLabels() {
 function buildMap() {
   const mapEl = qs('map');
 
+  // If we previously rendered an error overlay (or anything else), clear it so it
+  // can't sit on top of the map on a subsequent rebuild.
+  try {
+    mapEl.innerHTML = '';
+  } catch {
+    // ignore
+  }
+
   if (!window.maplibregl) {
     throw new Error('MapLibre failed to load.');
   }
@@ -804,8 +700,8 @@ function buildMap() {
   map = new window.maplibregl.Map({
     container: mapEl,
     style: 'https://tiles.openfreemap.org/styles/liberty',
-    center: [STOPS[0].position.lng, STOPS[0].position.lat],
-    zoom: 10,
+    center: stops.length ? [stops[0].position.lng, stops[0].position.lat] : [DEFAULT_CENTER.lng, DEFAULT_CENTER.lat],
+    zoom: stops.length ? 10 : DEFAULT_ZOOM,
     attributionControl: true
   });
 
@@ -822,7 +718,7 @@ function buildMap() {
 
     ensureTransitLayer();
 
-    markers = STOPS.map((stop, idx) => {
+    markers = stops.map((stop, idx) => {
       const wrap = document.createElement('div');
       wrap.className = 'markerWrap';
 
@@ -868,7 +764,7 @@ function buildMap() {
       return marker;
     });
 
-    poiMarkers = Object.values(POIS).map((poi) => {
+    poiMarkers = Object.values(pois).map((poi) => {
       const wrap = document.createElement('div');
       wrap.className = 'markerWrap';
 
@@ -917,13 +813,18 @@ function buildMap() {
     });
 
     const bounds = new window.maplibregl.LngLatBounds();
-    for (const stop of STOPS) {
+    let hasBounds = false;
+    for (const stop of stops) {
       bounds.extend([stop.position.lng, stop.position.lat]);
+      hasBounds = true;
     }
-    for (const poi of Object.values(POIS)) {
+    for (const poi of Object.values(pois)) {
       bounds.extend([poi.position.lng, poi.position.lat]);
+      hasBounds = true;
     }
-    map.fitBounds(bounds, { padding: 40 });
+    if (hasBounds) {
+      map.fitBounds(bounds, { padding: 40 });
+    }
 
     // Re-apply focus highlights/route if the user clicked before the map finished loading.
     if (typeof focusedDayIndex === 'number') {
@@ -951,7 +852,10 @@ function selectStop(index, { zoom, openPopup } = {}) {
     return;
   }
 
-  const stop = STOPS[index];
+  const stop = stops[index];
+  if (!stop) {
+    return;
+  }
 
   const center = [stop.position.lng, stop.position.lat];
   if (typeof zoom === 'number') {
@@ -965,6 +869,304 @@ function selectStop(index, { zoom, openPopup } = {}) {
     openMarkerPopup(marker);
   }
 }
+
+function loadAuth() {
+  try {
+    const raw = localStorage.getItem(KEY_STORAGE_KEY);
+    const val = raw == null ? '' : String(raw);
+    return val.trim();
+  } catch {
+    return '';
+  }
+}
+
+function saveAuth(nextAuth) {
+  const val = String(nextAuth || '').trim();
+  try {
+    if (!val) {
+      localStorage.removeItem(KEY_STORAGE_KEY);
+    } else {
+      localStorage.setItem(KEY_STORAGE_KEY, val);
+    }
+  } catch {
+    // ignore
+  }
+}
+
+function setAuthStatus(message) {
+  const el = document.getElementById('authStatus');
+  if (!el) {
+    return;
+  }
+  el.textContent = message ? String(message) : '';
+}
+
+async function fetchBackendPlaces(auth) {
+  const url = `${API_BASE}/storage/collection?collection=${encodeURIComponent(COLLECTION_NAME)}`;
+  const res = await fetch(url, {
+    method: 'GET',
+    headers: {
+      [AUTH_HEADER_NAME]: auth
+    }
+  });
+
+  let payload = null;
+  try {
+    payload = await res.json();
+  } catch {
+    // ignore
+  }
+
+  if (!res.ok) {
+    const statusMsg = payload && payload.status ? ` (${payload.status})` : '';
+    throw new Error(`Storage GET failed: HTTP ${res.status}${statusMsg}`);
+  }
+
+  if (!payload || payload.status !== 'ok' || !Array.isArray(payload.data)) {
+    throw new Error('Storage GET failed: unexpected response');
+  }
+
+  return payload.data;
+}
+
+function getLatLngFromRecord(record) {
+  const lat = typeof record.lat === 'number' ? record.lat : record.position && typeof record.position.lat === 'number' ? record.position.lat : null;
+  const lng = typeof record.lng === 'number' ? record.lng : record.position && typeof record.position.lng === 'number' ? record.position.lng : null;
+  if (typeof lat === 'number' && typeof lng === 'number') {
+    return { lat, lng };
+  }
+  return null;
+}
+
+function normalizeStringArray(value) {
+  if (Array.isArray(value)) {
+    return value.map((v) => String(v)).map((s) => s.trim()).filter(Boolean);
+  }
+  if (typeof value === 'string') {
+    return value
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+  }
+  return [];
+}
+
+function buildStateFromBackendRecords(records) {
+  /** @type {any[]} */
+  const nextStops = [];
+  /** @type {Record<string, any>} */
+  const nextPois = {};
+  /** @type {any[]} */
+  const nextDays = [];
+
+  for (const record of records || []) {
+    if (!record || typeof record.key !== 'string') {
+      continue;
+    }
+
+    const parsed = parsePlaceKey(record.key);
+
+    if (parsed) {
+      const ll = getLatLngFromRecord(record) || DEFAULT_CENTER;
+
+      if (parsed.type === 'stop') {
+        nextStops.push({
+          id: parsed.id,
+          key: record.key,
+          name: typeof record.name === 'string' ? record.name : parsed.id,
+          city: typeof record.city === 'string' ? record.city : '',
+          dates: typeof record.dates === 'string' ? record.dates : '',
+          details: typeof record.details === 'string' ? record.details : '',
+          position: { lat: ll.lat, lng: ll.lng }
+        });
+      } else if (parsed.type === 'poi') {
+        nextPois[parsed.id] = {
+          id: parsed.id,
+          key: record.key,
+          name: typeof record.name === 'string' ? record.name : parsed.id,
+          details: typeof record.details === 'string' ? record.details : '',
+          position: { lat: ll.lat, lng: ll.lng }
+        };
+      }
+
+      continue;
+    }
+
+    const parsedDay = parseDayKey(record.key);
+    if (parsedDay && parsedDay.type === 'day') {
+      const date = typeof record.date === 'string' ? record.date : typeof record.dateLabel === 'string' ? record.dateLabel : parsedDay.id;
+      const stopId = typeof record.stopId === 'string' ? record.stopId : typeof record.stop_id === 'string' ? record.stop_id : '';
+      const summary = typeof record.summary === 'string' ? record.summary : '';
+      const poiIds = normalizeStringArray(record.poiIds ?? record.pois ?? record.poi_ids);
+
+      nextDays.push({
+        id: parsedDay.id,
+        key: record.key,
+        date,
+        stopId,
+        summary,
+        poiIds
+      });
+    }
+  }
+
+  nextDays.sort((a, b) => {
+    const ad = parseDayDate(a.date) || parseDayDate(a.id);
+    const bd = parseDayDate(b.date) || parseDayDate(b.id);
+    if (ad && bd) {
+      return ad.getTime() - bd.getTime();
+    }
+    if (ad && !bd) {
+      return -1;
+    }
+    if (!ad && bd) {
+      return 1;
+    }
+    return String(a.id).localeCompare(String(b.id));
+  });
+
+  const stopFirstDate = new Map();
+  for (const day of nextDays) {
+    if (!day || !day.stopId) {
+      continue;
+    }
+    const d = parseDayDate(day.date) || parseDayDate(day.id);
+    if (!d) {
+      continue;
+    }
+    const existing = stopFirstDate.get(day.stopId);
+    if (!existing || d.getTime() < existing.getTime()) {
+      stopFirstDate.set(day.stopId, d);
+    }
+  }
+
+  // Sort stops by earliest planned day they appear on (fallback: by id).
+  nextStops.sort((a, b) => {
+    const aMin = stopFirstDate.get(a.id) || null;
+    const bMin = stopFirstDate.get(b.id) || null;
+    if (aMin && bMin) {
+      return aMin.getTime() - bMin.getTime();
+    }
+    if (aMin && !bMin) {
+      return -1;
+    }
+    if (!aMin && bMin) {
+      return 1;
+    }
+    return String(a.id).localeCompare(String(b.id));
+  });
+
+  return { nextStops, nextPois, nextDays };
+}
+
+let refreshSeq = 0;
+
+async function refreshPlacesAndRebuildMap({ reason } = {}) {
+  const seq = refreshSeq += 1;
+  const auth = loadAuth();
+  const dayPanel = document.getElementById('dayPanel');
+
+  if (!auth) {
+    stops = [];
+    pois = {};
+    days = [];
+    plannedDatesIndex = buildPlannedDatesIndex([]);
+    clearFocusedDay();
+    if (dayPanel) {
+      dayPanel.hidden = true;
+    }
+    setAuthStatus('Enter your key to load the map.');
+    renderSidebar();
+    try {
+      buildMap();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(err);
+      showMapError(msg);
+    }
+    return;
+  }
+
+  setAuthStatus('Loading from backend…');
+  if (dayPanel) {
+    dayPanel.hidden = true;
+  }
+
+  try {
+    const records = await fetchBackendPlaces(auth);
+    if (seq !== refreshSeq) {
+      return;
+    }
+
+    const built = buildStateFromBackendRecords(records);
+    stops = built.nextStops;
+    pois = built.nextPois;
+    days = built.nextDays;
+    plannedDatesIndex = buildPlannedDatesIndex(days);
+
+    setAuthStatus(`Loaded ${records.length} place records${reason ? ` (${reason})` : ''}.`);
+    renderSidebar();
+    try {
+      buildMap();
+    } catch (mapErr) {
+      const mapMsg = mapErr instanceof Error ? mapErr.message : String(mapErr);
+      console.error(mapErr);
+      showMapError(mapMsg);
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(err);
+    setAuthStatus(`Backend load failed: ${msg}`);
+
+    days = [];
+    plannedDatesIndex = buildPlannedDatesIndex([]);
+    clearFocusedDay();
+    if (dayPanel) {
+      dayPanel.hidden = true;
+    }
+
+    // Keep the current map/data if backend fails.
+    if (!map) {
+      renderSidebar();
+      try {
+        buildMap();
+      } catch (mapErr) {
+        const mapMsg = mapErr instanceof Error ? mapErr.message : String(mapErr);
+        console.error(mapErr);
+        showMapError(mapMsg);
+      }
+    }
+  }
+}
+
+let authUiBound = false;
+
+function initAuthUi() {
+  const input = document.getElementById('authInput');
+  if (!input || !(input instanceof HTMLInputElement)) {
+    return;
+  }
+
+  if (authUiBound) {
+    return;
+  }
+  authUiBound = true;
+
+  input.value = loadAuth();
+  input.addEventListener('change', () => {
+    saveAuth(input.value);
+    refreshPlacesAndRebuildMap({ reason: 'key updated' });
+  });
+  input.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') {
+      return;
+    }
+    e.preventDefault();
+    saveAuth(input.value);
+    refreshPlacesAndRebuildMap({ reason: 'key updated' });
+  });
+}
+
 
 function openMarkerPopup(marker) {
   if (!map || !marker || !marker.getPopup) {
@@ -1017,89 +1219,9 @@ function openMarkerPopup(marker) {
   }
 }
 
-function loadBookingState() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    const parsed = raw ? JSON.parse(raw) : null;
-    const checked = parsed && Array.isArray(parsed.checked) ? parsed.checked : [];
-    return new Set(checked.filter((id) => typeof id === 'string'));
-  } catch {
-    return new Set();
-  }
-}
-
-function saveBookingState(checkedSet) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ checked: Array.from(checkedSet) }));
-  } catch {
-    // ignore
-  }
-}
-
-let bookingsEventsBound = false;
-
-function renderBookings() {
-  const container = qs('bookings');
-  const checked = loadBookingState();
-
-  const doneCount = BOOKING_ITEMS.filter((i) => checked.has(i.id)).length;
-  const totalCount = BOOKING_ITEMS.length;
-
-  const itemsHtml = BOOKING_ITEMS.map((item) => {
-    const isDone = checked.has(item.id);
-    return `
-      <label class="checkItem ${isDone ? 'done' : ''}">
-        <input type="checkbox" data-check-id="${escapeHtml(item.id)}" ${isDone ? 'checked' : ''} />
-        <div>
-          <div class="checkTitle">${escapeHtml(item.title)}</div>
-          <div class="checkMeta">${escapeHtml(item.meta || '')}</div>
-        </div>
-      </label>
-    `;
-  }).join('');
-
-  container.innerHTML = `
-    <div class="checklist">
-      <div class="checkSummary muted">${doneCount}/${totalCount} done</div>
-      ${itemsHtml}
-    </div>
-  `;
-
-  if (!bookingsEventsBound) {
-    bookingsEventsBound = true;
-    container.addEventListener('change', (e) => {
-      const target = e.target;
-      if (!(target instanceof HTMLInputElement)) {
-        return;
-      }
-      const id = target.getAttribute('data-check-id');
-      if (!id) {
-        return;
-      }
-
-      const next = loadBookingState();
-      if (target.checked) {
-        next.add(id);
-      } else {
-        next.delete(id);
-      }
-      saveBookingState(next);
-      renderBookings();
-    });
-  }
-}
-
-function main() {
-  renderSidebar();
-  renderBookings();
-
-  try {
-    buildMap();
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.error(err);
-    showMapError(msg);
-  }
+async function main() {
+  initAuthUi();
+  await refreshPlacesAndRebuildMap({ reason: 'initial load' });
 }
 
 main();

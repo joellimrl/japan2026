@@ -19,11 +19,15 @@
             </header>
 
             <section class="panel">
-                <h2>Map</h2>
-                <p class="muted">OpenFreeMap vector tiles via MapLibre GL JS. No API key required.</p>
+                <h2>Key</h2>
+                <p class="muted">Enter your key to load places on the map.</p>
+                <div class="keyForm">
+                    <input id="authInput" class="maskedInput" type="text" placeholder="Enter key" autocomplete="off" spellcheck="false" autocapitalize="off" />
+                    <div id="authStatus" class="muted" role="status" aria-live="polite"></div>
+                </div>
             </section>
 
-            <section class="panel">
+            <section class="panel" id="dayPanel" hidden>
                 <h2>Day by day</h2>
                 <div id="itinerary"></div>
             </section>
@@ -32,13 +36,6 @@
         <main class="mapArea">
             <div id="map"></div>
         </main>
-
-        <aside class="rightbar">
-            <section class="panel">
-                <h2>Bookings checklist</h2>
-                <div id="bookings"></div>
-            </section>
-        </aside>
     </div>
 
     <script src="https://unpkg.com/maplibre-gl/dist/maplibre-gl.js"></script>

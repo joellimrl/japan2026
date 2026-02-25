@@ -22,4 +22,16 @@ Note: OpenStreetMap provides map data/tiles, but **not** public-transport direct
 
 ## Edit the itinerary
 
-Update the stops (names, dates, coordinates, notes) in [app.js](app.js) (`ITINERARY`).
+Places (stops + POIs) and the day-by-day itinerary are loaded from Streetbot storage.
+
+- The app reads `stop:*`, `poi:*`, and `day:*` records from the `japan2026` collection
+- To update data, write updated records into storage 
+
+## Local dev (CORS-free)
+
+When running locally, you can use the dev server in [server/dev-server.js](server/dev-server.js). It serves the static site and proxies API calls via same-origin `/api/*`, which avoids browser CORS.
+
+- Run: `node server/dev-server.js`
+- Open: `http://127.0.0.1:8787/`
+
+In local dev, the app calls `/api/storage/...` which the dev server forwards to `https://streetbot.fly.dev/storage/...`.
