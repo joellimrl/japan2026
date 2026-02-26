@@ -27,6 +27,13 @@ Places (stops + POIs) and the day-by-day itinerary are loaded from Streetbot sto
 - The app reads `stop:*`, `poi:*`, and `day:*` records from the `japan2026` collection
 - To update data, write updated records into storage 
 
+### Coordinates in storage
+
+- Canonical fields: `lat` and `lng` (top-level numbers on `stop:*` / `poi:*` records)
+- Legacy/alternate field: `position: { lat, lng }` (the app treats this as a fallback)
+
+If both exist and differ, the app will use top-level `lat`/`lng`.
+
 ## Local dev
 
 Serve the folder with any static web server and open `index.html`. API calls go directly to `https://streetbot.fly.dev`.

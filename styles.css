@@ -97,9 +97,163 @@ button.secondary {
     position: relative;
 }
 
+.mapSearch {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    right: 12px;
+    max-width: 520px;
+    z-index: 2;
+}
+
+.mapSearchInput {
+    width: 100%;
+    padding: 10px;
+    border-radius: 10px;
+    border: 1px solid #d0d0d0;
+    background: #ffffff;
+    font-size: 14px;
+}
+
+.mapSearchResults {
+    margin-top: 6px;
+    border: 1px solid #e6e6e6;
+    border-radius: 10px;
+    overflow: hidden;
+    background: #ffffff;
+}
+
+.mapSearchResultItem {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 8px 10px;
+    border: 0;
+    border-radius: 0;
+    background: #ffffff;
+    cursor: pointer;
+    text-align: left;
+}
+
+.mapSearchResultItem:hover {
+    background: #f6f6f6;
+}
+
+.mapSearchResultName {
+    font-size: 13px;
+    color: #333;
+    font-weight: 700;
+}
+
+.mapSearchResultLocation {
+    font-size: 12px;
+    color: #666;
+}
+
+/* Marker popups (MapLibre) */
+.markerPopup {
+    min-width: min(260px, calc(100vw - 64px));
+    max-width: 840px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.markerPopupTitle {
+    font-weight: 700;
+    max-width: 100%;
+}
+
+.markerPopupTextarea {
+    width: 100%;
+    margin: 0;
+}
+
+.markerPopupStatus {
+    font-size: 12px;
+    color: #333;
+}
+
+.markerDayPills {
+    cursor: pointer;
+}
+
+.markerPopup--stop {
+    min-width: min(220px, calc(100vw - 64px));
+    max-width: 640px;
+}
+
+.markerPopupStopDates {
+    font-size: 12px;
+    color: #333;
+    white-space: normal;
+}
+
+.markerPopupMeta {
+    font-size: 12px;
+    color: #555;
+    white-space: normal;
+}
+
+/* Day picker dropdown inside marker popup: constrained + scroll (overrides base .poiSuggest) */
+.poiSuggest.poiDayDropdown {
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+}
+
 #map {
     height: 100%;
     width: 100%;
+}
+
+/* Constrain MapLibre popups so they don't run off the map/viewport.
+   Keep vertical scroll and avoid horizontal overflow. */
+.maplibregl-popup-content {
+    max-width: min(880px, calc(100vw - 48px));
+    max-height: min(840px, calc(100vh - 140px));
+    overflow-y: auto;
+    overflow-x: auto;
+    padding: 12px;
+    box-sizing: border-box;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
+/* In popups, prefer wrapping over truncation. */
+.maplibregl-popup-content .poiSuggestItem {
+    align-items: flex-start;
+}
+
+.maplibregl-popup-content .poiSuggestName {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+}
+
+.maplibregl-popup-content .pill {
+    flex-wrap: wrap;
+}
+
+.maplibregl-popup-content .pillText {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+}
+
+/* Ensure popup form controls don't overflow the popup box. */
+.maplibregl-popup-content input:not([type="checkbox"]):not([type="radio"]),
+.maplibregl-popup-content textarea,
+.maplibregl-popup-content select {
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+}
+
+.maplibregl-popup-content textarea {
+    resize: vertical;
 }
 
 /* Lighten the basemap rendering so custom markers stand out more.
@@ -285,6 +439,10 @@ button.secondary {
 
 .poiSuggestName {
     color: #333;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .poiSuggestId {
@@ -303,6 +461,15 @@ button.secondary {
     display: inline-flex;
     align-items: center;
     gap: 6px;
+    max-width: 100%;
+}
+
+.pillText {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 100%;
 }
 
 .pillRemove {

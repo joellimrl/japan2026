@@ -94,6 +94,7 @@ function getAllPoisSorted() {
     .map((p) => ({
       id: String(p.id || ''),
       name: String(p.name || p.id || '').trim(),
+      location: String(p.location || '').trim(),
       details: String(p.details || '').trim()
     }))
     .filter((p) => p.id)
@@ -114,7 +115,7 @@ function getPoiSuggestionMatches(query, { excludeIds } = {}) {
     if (excludeSet && excludeSet.has(p.id)) {
       continue;
     }
-    const hay = `${p.name} ${p.id}`.toLowerCase();
+    const hay = `${p.name} ${p.location} ${p.id}`.toLowerCase();
     if (hay.includes(q)) {
       matches.push(p);
     }
@@ -1122,6 +1123,482 @@ function setEnglishLabels() {
   }
 }
 
+function getPoiAssignedDayIndices(poiId) {
+  const id = String(poiId || '').trim();
+  if (!id || !Array.isArray(days)) {
+    return [];
+  }
+
+  const indices = [];
+  for (let i = 0; i < days.length; i += 1) {
+    const day = days[i];
+    if (!day || !Array.isArray(day.poiIds)) {
+      continue;
+    }
+    if (day.poiIds.includes(id)) {
+      indices.push(i);
+    }
+  }
+  return indices;
+}
+
+function updatePoiMarkerDateBadge(poiId) {
+  const id = String(poiId || '').trim();
+  if (!id) {
+    return;
+  }
+
+  const entry = poiMarkerById.get(id);
+  if (!entry) {
+    return;
+  }
+
+  const dateEl = entry.dateEl || (entry.element ? entry.element.querySelector('.markerDate') : null);
+  if (!dateEl) {
+    return;
+  }
+
+  const planned = formatPlannedDatesShort(getPlannedDatesForPoi(id));
+  dateEl.textContent = planned;
+  dateEl.hidden = !planned;
+}
+
+async function persistDayRecords(dayIndices) {
+  const unique = Array.from(new Set(dayIndices || [])).filter((idx) => Number.isInteger(idx));
+  if (!unique.length) {
+    return;
+  }
+
+  for (const idx of unique) {
+    const day = days[idx];
+    if (!day) {
+      continue;
+    }
+    const rec = { key: day.key, date: day.date, stopId: day.stopId, summary: day.summary, poiIds: day.poiIds };
+    await updateStorageRecord(rec);
+  }
+}
+
+async function setPoiAssignedDays(poiIdRaw, nextDayIndices) {
+  const poiId = String(poiIdRaw || '').trim();
+  if (!poiId || !Array.isArray(days)) {
+    return;
+  }
+
+  const targetSet = new Set(
+    (Array.isArray(nextDayIndices) ? nextDayIndices : [])
+      .filter((idx) => Number.isInteger(idx))
+      .filter((idx) => idx >= 0 && idx < days.length)
+  );
+
+  /** @type {Map<number, string[]>} */
+  const before = new Map();
+  /** @type {number[]} */
+  const changed = [];
+
+  for (let i = 0; i < days.length; i += 1) {
+    const day = days[i];
+    if (!day) {
+      continue;
+    }
+    if (!Array.isArray(day.poiIds)) {
+      day.poiIds = [];
+    }
+
+    const has = day.poiIds.includes(poiId);
+    const wants = targetSet.has(i);
+    if (has === wants) {
+      continue;
+    }
+
+    before.set(i, [...day.poiIds]);
+    if (wants) {
+      day.poiIds.push(poiId);
+    } else {
+      day.poiIds = day.poiIds.filter((id) => String(id) !== poiId);
+    }
+    changed.push(i);
+  }
+
+  if (!changed.length) {
+    return;
+  }
+
+  try {
+    await persistDayRecords(changed);
+  } catch (err) {
+    // Rollback local state if storage write fails.
+    for (const [idx, poiIds] of before.entries()) {
+      if (days[idx]) {
+        days[idx].poiIds = poiIds;
+      }
+    }
+    throw err;
+  }
+
+  plannedDatesIndex = buildPlannedDatesIndex(days);
+  renderSidebar();
+  updatePoiMarkerDateBadge(poiId);
+  if (typeof focusedDayIndex === 'number') {
+    setFocusedDay(focusedDayIndex);
+  }
+}
+
+function createPoiMarker(poi) {
+  if (!map || !poi) {
+    return null;
+  }
+
+  const wrap = document.createElement('div');
+  wrap.className = 'markerWrap';
+
+  const el = document.createElement('div');
+  el.className = 'mapMarker poi';
+  el.textContent = '•';
+
+  const dateEl = document.createElement('div');
+  dateEl.className = 'markerDate';
+  dateEl.textContent = formatPlannedDatesShort(getPlannedDatesForPoi(poi.id));
+  dateEl.hidden = !dateEl.textContent;
+
+  wrap.append(dateEl, el);
+
+  // Popup DOM: only Day + Description are editable.
+  const popupEl = document.createElement('div');
+  popupEl.className = 'markerPopup';
+
+  const titleRow = document.createElement('div');
+  titleRow.className = 'markerPopupTitle';
+  titleRow.textContent = poi.name || poi.id;
+  popupEl.appendChild(titleRow);
+
+  const dayLabel = document.createElement('div');
+  dayLabel.className = 'muted markerPopupLabel';
+  dayLabel.textContent = 'Days';
+  popupEl.appendChild(dayLabel);
+
+  const dayPills = document.createElement('div');
+  dayPills.className = 'dayPlacesPills markerDayPills';
+  popupEl.appendChild(dayPills);
+
+  const dayDropdown = document.createElement('div');
+  dayDropdown.className = 'poiSuggest poiDayDropdown';
+  dayDropdown.hidden = true;
+  popupEl.appendChild(dayDropdown);
+
+  const detailsInput = document.createElement('textarea');
+  detailsInput.rows = 4;
+  detailsInput.className = 'markerPopupTextarea';
+  detailsInput.value = poi.details || '';
+  popupEl.appendChild(detailsInput);
+
+  const saveStatus = document.createElement('div');
+  saveStatus.className = 'markerPopupStatus';
+  popupEl.appendChild(saveStatus);
+
+  const popup = new window.maplibregl.Popup({ offset: 16, maxWidth: '880px' }).setDOMContent(popupEl);
+
+  const formatDayLabel = (idx) => {
+    const d = Array.isArray(days) ? days[idx] : null;
+    const stop = d && d.stopId ? getStopById(d.stopId) : null;
+    const stopPart = stop && stop.name ? ` — ${stop.name}` : '';
+    const datePart = String(d && d.date ? d.date : `Day ${idx + 1}`);
+    return `${datePart}${stopPart}`;
+  };
+
+  const normalizeDayIndices = (indices) => {
+    const clean = (Array.isArray(indices) ? indices : [])
+      .map((v) => Number(v))
+      .filter((v) => Number.isInteger(v));
+
+    const unique = Array.from(new Set(clean)).filter((idx) => idx >= 0 && idx < (days || []).length);
+    unique.sort((a, b) => a - b);
+    return unique;
+  };
+
+  // Save: description (POI details)
+  let poiSaveInFlight = false;
+  let poiSaveInFlightFingerprint = '';
+
+  const scheduleDetailsSave = () => {
+    const nextDetails = String(detailsInput.value || '').trim();
+    const currentDetails = String(poi.details || '').trim();
+    if (nextDetails === currentDetails) {
+      return;
+    }
+
+    const fingerprint = `${poi.key}\n${nextDetails}`;
+    if (poiSaveInFlight && fingerprint === poiSaveInFlightFingerprint) {
+      return;
+    }
+
+    poiSaveInFlight = true;
+    poiSaveInFlightFingerprint = fingerprint;
+    saveStatus.textContent = 'Saving…';
+
+    const next = {
+      key: poi.key,
+      name: String(poi.name || '').trim(),
+      location: String(poi.location || '').trim(),
+      details: nextDetails,
+      lat: poi.position.lat,
+      lng: poi.position.lng
+    };
+
+    updateStorageRecord(next)
+      .then(() => {
+        saveStatus.textContent = 'Saved';
+        poi.details = next.details;
+        renderSidebar();
+      })
+      .catch((err) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        saveStatus.textContent = `Save failed: ${msg}`;
+      })
+      .finally(() => {
+        poiSaveInFlight = false;
+        poiSaveInFlightFingerprint = '';
+      });
+  };
+
+  detailsInput.addEventListener('blur', () => {
+    scheduleDetailsSave();
+  });
+
+  // Save: day assignment (updates day:* record(s))
+  let dayUpdateInFlight = false;
+  let lastSavedDayIndices = normalizeDayIndices(getPoiAssignedDayIndices(poi.id));
+  let dayPickerOpen = false;
+
+  const applyDayDropdownMaxHeight = () => {
+    if (!map || !dayPickerOpen || dayDropdown.hidden) {
+      return;
+    }
+
+    // Keep the dropdown within the visible map area with a bit of padding.
+    // This prevents the popup from growing beyond the map edge when many days exist.
+    const mapContainer = typeof map.getContainer === 'function' ? map.getContainer() : null;
+    if (!mapContainer) {
+      return;
+    }
+
+    const mapRect = mapContainer.getBoundingClientRect();
+    const dropdownRect = dayDropdown.getBoundingClientRect();
+    if (!mapRect || !dropdownRect) {
+      return;
+    }
+
+    const EDGE_PADDING = 12;
+    const spaceBelow = Math.max(0, mapRect.bottom - EDGE_PADDING - dropdownRect.top);
+    const maxHeight = Math.max(0, Math.min(spaceBelow, 340));
+    if (maxHeight > 0) {
+      dayDropdown.style.maxHeight = `${Math.floor(maxHeight)}px`;
+    }
+  };
+
+  const setDayPickerOpen = (open) => {
+    dayPickerOpen = Boolean(open);
+    dayDropdown.hidden = !dayPickerOpen;
+
+    if (dayPickerOpen) {
+      // Wait for layout after un-hiding.
+      requestAnimationFrame(() => applyDayDropdownMaxHeight());
+    }
+  };
+
+  const renderDayUi = () => {
+    // Selected pills
+    dayPills.innerHTML = '';
+    if (!Array.isArray(days) || !days.length) {
+      const empty = document.createElement('div');
+      empty.className = 'muted';
+      empty.textContent = 'No days available';
+      dayPills.appendChild(empty);
+    } else if (!lastSavedDayIndices.length) {
+      const empty = document.createElement('div');
+      empty.className = 'muted';
+      empty.textContent = 'None selected (click to add)';
+      dayPills.appendChild(empty);
+    } else {
+      for (const idx of lastSavedDayIndices) {
+        const pill = document.createElement('span');
+        pill.className = 'pill';
+        pill.dataset.dayIndex = String(idx);
+        pill.innerHTML =
+          `<span class="pillText">${escapeHtml(formatDayLabel(idx))}</span>` +
+          `<button type="button" class="pillRemove" aria-label="Remove" data-action="remove-poi-day" data-day-index="${idx}">×</button>`;
+        dayPills.appendChild(pill);
+      }
+    }
+
+    // Dropdown content: remove + add
+    if (!Array.isArray(days) || !days.length) {
+      dayDropdown.innerHTML = '';
+      return;
+    }
+
+    const selectedSet = new Set(lastSavedDayIndices);
+    const removeItems = lastSavedDayIndices;
+    const addItems = [];
+    for (let i = 0; i < days.length; i += 1) {
+      if (!selectedSet.has(i)) {
+        addItems.push(i);
+      }
+    }
+
+    const htmlParts = [];
+
+    if (removeItems.length) {
+      htmlParts.push(
+        `<div class="muted" style="padding:8px 10px;border-bottom:1px solid #e6e6e6">Remove day</div>`
+      );
+      for (const idx of removeItems) {
+        htmlParts.push(
+          `<button type="button" class="poiSuggestItem" data-action="remove-poi-day" data-day-index="${idx}">` +
+            `<span class="poiSuggestName">${escapeHtml(formatDayLabel(idx))}</span>` +
+            `<span class="poiSuggestId">Remove</span>` +
+          `</button>`
+        );
+      }
+    }
+
+    htmlParts.push(
+      `<div class="muted" style="padding:8px 10px;border-top:${removeItems.length ? '1px solid #e6e6e6' : '0'};border-bottom:1px solid #e6e6e6">Add day</div>`
+    );
+    if (!addItems.length) {
+      htmlParts.push(`<div class="muted" style="padding:8px 10px">All days already selected</div>`);
+    } else {
+      for (const idx of addItems) {
+        htmlParts.push(
+          `<button type="button" class="poiSuggestItem" data-action="add-poi-day" data-day-index="${idx}">` +
+            `<span class="poiSuggestName">${escapeHtml(formatDayLabel(idx))}</span>` +
+            `<span class="poiSuggestId">Add</span>` +
+          `</button>`
+        );
+      }
+    }
+
+    dayDropdown.innerHTML = htmlParts.join('');
+  };
+
+  const saveDays = (nextIndicesRaw) => {
+    if (dayUpdateInFlight) {
+      return;
+    }
+
+    const nextIndices = normalizeDayIndices(nextIndicesRaw);
+    const currentKey = lastSavedDayIndices.join(',');
+    const nextKey = nextIndices.join(',');
+    if (currentKey === nextKey) {
+      return;
+    }
+
+    const rollback = lastSavedDayIndices;
+    dayUpdateInFlight = true;
+    saveStatus.textContent = 'Saving days…';
+
+    setPoiAssignedDays(poi.id, nextIndices)
+      .then(() => {
+        lastSavedDayIndices = nextIndices;
+        saveStatus.textContent = 'Days saved';
+        updatePoiMarkerDateBadge(poi.id);
+        renderDayUi();
+      })
+      .catch((err) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        saveStatus.textContent = `Days save failed: ${msg}`;
+        lastSavedDayIndices = rollback;
+        renderDayUi();
+      })
+      .finally(() => {
+        dayUpdateInFlight = false;
+      });
+  };
+
+  dayPills.addEventListener(
+    'click',
+    (e) => {
+      const target = e.target instanceof Element ? e.target : null;
+      if (!target) {
+        return;
+      }
+
+      const removeBtn = target.closest('[data-action="remove-poi-day"]');
+      if (removeBtn) {
+        e.preventDefault();
+        e.stopPropagation();
+        const idx = Number(removeBtn.getAttribute('data-day-index'));
+        if (Number.isInteger(idx)) {
+          saveDays(lastSavedDayIndices.filter((v) => v !== idx));
+        }
+        return;
+      }
+
+      // Toggle dropdown for add/remove.
+      setDayPickerOpen(!dayPickerOpen);
+    },
+    true
+  );
+
+  dayDropdown.addEventListener(
+    'click',
+    (e) => {
+      const target = e.target instanceof Element ? e.target : null;
+      const actionEl = target ? target.closest('[data-action]') : null;
+      if (!actionEl) {
+        return;
+      }
+      const action = actionEl.getAttribute('data-action');
+      const idx = Number(actionEl.getAttribute('data-day-index'));
+      if (!Number.isInteger(idx)) {
+        return;
+      }
+
+      e.preventDefault();
+      e.stopPropagation();
+
+      if (action === 'add-poi-day') {
+        saveDays([...lastSavedDayIndices, idx]);
+        setDayPickerOpen(false);
+        return;
+      }
+
+      if (action === 'remove-poi-day') {
+        saveDays(lastSavedDayIndices.filter((v) => v !== idx));
+        setDayPickerOpen(false);
+      }
+    },
+    true
+  );
+
+  popupEl.addEventListener('click', (e) => {
+    // Keep clicks inside popup from bubbling to map,
+    // but don't block child handlers (avoid capture-phase stopPropagation).
+    e.stopPropagation();
+  });
+
+  renderDayUi();
+
+  const marker = new window.maplibregl.Marker({ element: wrap, anchor: 'bottom' })
+    .setLngLat([poi.position.lng, poi.position.lat])
+    .setPopup(popup)
+    .addTo(map);
+
+  poiMarkerById.set(poi.id, { marker, element: wrap, dateEl, popup });
+
+  wrap.addEventListener(
+    'click',
+    (e) => {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      openMarkerPopup(marker);
+    },
+    true
+  );
+
+  return marker;
+}
+
 function buildMap() {
   const mapEl = qs('map');
 
@@ -1179,12 +1656,12 @@ function buildMap() {
 
       wrap.append(dateEl, el);
 
-      const popup = new window.maplibregl.Popup({ offset: 18 }).setHTML(
+      const popup = new window.maplibregl.Popup({ offset: 18, maxWidth: '880px' }).setHTML(
         `
-          <div style="min-width:220px">
-            <div style="font-weight:700;margin-bottom:4px">${idx + 1}. ${escapeHtml(stop.name)}</div>
-            <div style="margin-bottom:6px">${escapeHtml(stop.dates)}</div>
-            <div style="color:#555">${escapeHtml(stop.city)} • ${escapeHtml(stop.details)}</div>
+          <div class="markerPopup markerPopup--stop">
+            <div class="markerPopupTitle">${idx + 1}. ${escapeHtml(stop.name)}</div>
+            <div class="markerPopupStopDates">${escapeHtml(stop.dates)}</div>
+            <div class="markerPopupMeta">${escapeHtml(stop.city)} • ${escapeHtml(stop.details)}</div>
           </div>
         `
       );
@@ -1210,195 +1687,9 @@ function buildMap() {
       return marker;
     });
 
-    poiMarkers = Object.values(pois).map((poi) => {
-      const wrap = document.createElement('div');
-      wrap.className = 'markerWrap';
-
-      const el = document.createElement('div');
-      el.className = 'mapMarker poi';
-      el.textContent = '•';
-
-      const dateEl = document.createElement('div');
-      dateEl.className = 'markerDate';
-      dateEl.textContent = formatPlannedDatesShort(getPlannedDatesForPoi(poi.id));
-      dateEl.hidden = !dateEl.textContent;
-
-      wrap.append(dateEl, el);
-
-      const planned = formatPlannedDatesShort(getPlannedDatesForPoi(poi.id));
-
-      // Build editable popup DOM for POIs
-      const popupEl = document.createElement('div');
-      popupEl.style.minWidth = '260px';
-
-      const titleRow = document.createElement('div');
-      titleRow.style.fontWeight = '700';
-      titleRow.style.marginBottom = '6px';
-
-      const nameInput = document.createElement('input');
-      nameInput.type = 'text';
-      nameInput.value = poi.name || '';
-      nameInput.style.width = '100%';
-      nameInput.style.fontWeight = '700';
-      nameInput.style.marginBottom = '6px';
-
-      titleRow.appendChild(nameInput);
-      popupEl.appendChild(titleRow);
-
-      if (planned) {
-        const plannedDiv = document.createElement('div');
-        plannedDiv.style.marginBottom = '6px';
-        plannedDiv.textContent = `Planned: ${planned}`;
-        popupEl.appendChild(plannedDiv);
-      }
-
-      const detailsInput = document.createElement('textarea');
-      detailsInput.rows = 3;
-      detailsInput.style.width = '100%';
-      detailsInput.value = poi.details || '';
-      detailsInput.style.marginBottom = '6px';
-      popupEl.appendChild(detailsInput);
-
-      const coordRow = document.createElement('div');
-      coordRow.style.display = 'flex';
-      coordRow.style.gap = '6px';
-
-      const latInput = document.createElement('input');
-      latInput.type = 'text';
-      latInput.value = String(poi.position.lat);
-      latInput.style.flex = '1';
-      latInput.placeholder = 'lat';
-
-      const lngInput = document.createElement('input');
-      lngInput.type = 'text';
-      lngInput.value = String(poi.position.lng);
-      lngInput.style.flex = '1';
-      lngInput.placeholder = 'lng';
-
-      coordRow.appendChild(latInput);
-      coordRow.appendChild(lngInput);
-      popupEl.appendChild(coordRow);
-
-      const saveStatus = document.createElement('div');
-      saveStatus.style.marginTop = '6px';
-      saveStatus.style.color = '#333';
-      popupEl.appendChild(saveStatus);
-
-      const popup = new window.maplibregl.Popup({ offset: 16 }).setDOMContent(popupEl);
-
-      // Auto-save helper
-      let poiSaveInFlight = false;
-      let poiSaveInFlightFingerprint = '';
-
-      const scheduleSave = () => {
-        const nextLatParsed = Number.parseFloat(String(latInput.value || ''));
-        const nextLngParsed = Number.parseFloat(String(lngInput.value || ''));
-
-        const nextName = String(nameInput.value || '').trim();
-        const nextDetails = String(detailsInput.value || '').trim();
-        const nextLat = Number.isFinite(nextLatParsed) ? nextLatParsed : poi.position.lat;
-        const nextLng = Number.isFinite(nextLngParsed) ? nextLngParsed : poi.position.lng;
-
-        const currentName = String(poi.name || '').trim();
-        const currentDetails = String(poi.details || '').trim();
-        const currentLat = poi.position.lat;
-        const currentLng = poi.position.lng;
-
-        const hasChanges = nextName !== currentName || nextDetails !== currentDetails || nextLat !== currentLat || nextLng !== currentLng;
-        if (!hasChanges) {
-          return;
-        }
-
-        const fingerprint = `${nextName}\n${nextDetails}\n${nextLat}\n${nextLng}`;
-        if (poiSaveInFlight && fingerprint === poiSaveInFlightFingerprint) {
-          return;
-        }
-
-        poiSaveInFlight = true;
-        poiSaveInFlightFingerprint = fingerprint;
-        saveStatus.textContent = 'Saving...';
-
-        const next = {
-          key: poi.key,
-          name: nextName,
-          details: nextDetails,
-          lat: nextLat,
-          lng: nextLng,
-          position: { lat: nextLat, lng: nextLng }
-        };
-
-        updateStorageRecord(next)
-          .then(() => {
-            saveStatus.textContent = 'Saved';
-            // Update local state
-            poi.name = next.name;
-            poi.details = next.details;
-            poi.position = { lat: next.lat, lng: next.lng };
-            try {
-              const entry = poiMarkerById.get(poi.id);
-              if (entry && entry.marker && typeof entry.marker.setLngLat === 'function') {
-                entry.marker.setLngLat([poi.position.lng, poi.position.lat]);
-              }
-              renderSidebar();
-            } catch (_err) {
-              // ignore
-            }
-          })
-          .catch((err) => {
-            const msg = err instanceof Error ? err.message : String(err);
-            saveStatus.textContent = `Save failed: ${msg}`;
-          })
-          .finally(() => {
-            poiSaveInFlight = false;
-            poiSaveInFlightFingerprint = '';
-          });
-      };
-
-      // Save on blur or Enter
-      for (const inputEl of [nameInput, detailsInput, latInput, lngInput]) {
-        inputEl.addEventListener('keydown', (ev) => {
-          if (ev.key === 'Enter' && ev.target === nameInput) {
-            ev.preventDefault();
-            try {
-              detailsInput.focus();
-            } catch {
-              // ignore
-            }
-          }
-          if (ev.key === 'Enter' && (ev.target === latInput || ev.target === lngInput)) {
-            ev.preventDefault();
-            try {
-              ev.target.blur();
-            } catch {
-              // ignore
-            }
-          }
-        });
-
-        inputEl.addEventListener('blur', () => {
-          scheduleSave();
-        });
-      }
-
-      const marker = new window.maplibregl.Marker({ element: wrap, anchor: 'bottom' })
-        .setLngLat([poi.position.lng, poi.position.lat])
-        .setPopup(popup)
-        .addTo(map);
-
-      poiMarkerById.set(poi.id, { marker, element: wrap });
-
-      wrap.addEventListener(
-        'click',
-        (e) => {
-          e.preventDefault();
-          e.stopImmediatePropagation();
-          openMarkerPopup(marker);
-        },
-        true
-      );
-
-      return marker;
-    });
+    poiMarkers = Object.values(pois)
+      .map((poi) => createPoiMarker(poi))
+      .filter(Boolean);
 
     const bounds = new window.maplibregl.LngLatBounds();
     let hasBounds = false;
@@ -1553,6 +1844,8 @@ async function updateStorageRecord(record) {
 }
 
 function getLatLngFromRecord(record) {
+  // Canonical storage location: top-level `lat`/`lng`.
+  // Some legacy/alternate writers may store `position.{lat,lng}`; treat that as fallback.
   const lat = typeof record.lat === 'number' ? record.lat : record.position && typeof record.position.lat === 'number' ? record.position.lat : null;
   const lng = typeof record.lng === 'number' ? record.lng : record.position && typeof record.position.lng === 'number' ? record.position.lng : null;
   if (typeof lat === 'number' && typeof lng === 'number') {
@@ -1607,6 +1900,7 @@ function buildStateFromBackendRecords(records) {
           id: parsed.id,
           key: record.key,
           name: typeof record.name === 'string' ? record.name : parsed.id,
+          location: typeof record.location === 'string' ? record.location : typeof record.address === 'string' ? record.address : '',
           details: typeof record.details === 'string' ? record.details : '',
           position: { lat: ll.lat, lng: ll.lng }
         };
@@ -1832,11 +2126,394 @@ function initAuthUi() {
   });
 }
 
+function slugifyId(raw) {
+  const base = String(raw || '')
+    .trim()
+    .toLowerCase()
+    .replace(/['’]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return base || 'place';
+}
+
+function fnv1aBase36(input) {
+  // Small, stable hash for client-side IDs (not for crypto).
+  let hash = 2166136261;
+  const str = String(input || '');
+  for (let i = 0; i < str.length; i += 1) {
+    hash ^= str.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  // Convert to unsigned then base36.
+  return (hash >>> 0).toString(36);
+}
+
+function createUniquePoiId({ name, lat, lng }) {
+  const base = slugifyId(name).slice(0, 40);
+  const salt = fnv1aBase36(`${name}|${lat}|${lng}|${Date.now()}`).slice(0, 6);
+  let candidate = `${base}-${salt}`;
+  let counter = 2;
+
+  while (candidate in (pois || {})) {
+    candidate = `${base}-${salt}-${counter}`;
+    counter += 1;
+  }
+
+  return candidate;
+}
+
+function formatGlobalPlaceLocation(properties) {
+  const parts = [];
+  const street = [properties && properties.street, properties && properties.housenumber].filter(Boolean).join(' ');
+  if (street) {
+    parts.push(street);
+  }
+
+  const locality = [properties && properties.city, properties && properties.state].filter(Boolean).join(', ');
+  if (locality) {
+    parts.push(locality);
+  }
+
+  if (properties && properties.country) {
+    parts.push(properties.country);
+  }
+
+  return parts.filter(Boolean).join(', ');
+}
+
+async function searchPlacesEverywhere(query, { signal } = {}) {
+  const q = String(query || '').trim();
+  if (!q) {
+    return [];
+  }
+
+  // Photon geocoder (OpenStreetMap-backed). Public endpoint, no API key.
+  const url = `https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=8&lang=en`;
+  const res = await fetch(url, {
+    method: 'GET',
+    headers: { accept: 'application/json' },
+    signal
+  });
+
+  if (!res.ok) {
+    throw new Error(`Search failed: HTTP ${res.status}`);
+  }
+
+  const payload = await res.json();
+  const features = payload && Array.isArray(payload.features) ? payload.features : [];
+
+  const results = [];
+  for (const f of features) {
+    const coords = f && f.geometry && Array.isArray(f.geometry.coordinates) ? f.geometry.coordinates : null;
+    const lng = coords && typeof coords[0] === 'number' ? coords[0] : null;
+    const lat = coords && typeof coords[1] === 'number' ? coords[1] : null;
+    if (typeof lat !== 'number' || typeof lng !== 'number') {
+      continue;
+    }
+
+    const props = f && f.properties ? f.properties : {};
+    const name = String(props.name || q).trim();
+    const location = String(formatGlobalPlaceLocation(props) || props.country || '').trim();
+    results.push({ name, location, lat, lng, _props: props });
+  }
+
+  return results;
+}
+
+let placeSearchBound = false;
+let lastGlobalSearchResults = [];
+
+function initPlaceSearchUi() {
+  const input = document.getElementById('placeSearchInput');
+  const resultsEl = document.getElementById('placeSearchResults');
+  if (!input || !(input instanceof HTMLInputElement) || !resultsEl) {
+    return;
+  }
+
+  if (placeSearchBound) {
+    return;
+  }
+  placeSearchBound = true;
+
+  let debounceTimer = null;
+  let abortController = null;
+
+  const clearResults = () => {
+    lastGlobalSearchResults = [];
+    resultsEl.innerHTML = '';
+    resultsEl.hidden = true;
+  };
+
+  const renderResults = (items) => {
+    lastGlobalSearchResults = items || [];
+    if (!lastGlobalSearchResults.length) {
+      clearResults();
+      return;
+    }
+
+    resultsEl.hidden = false;
+    resultsEl.innerHTML = lastGlobalSearchResults
+      .map((item, idx) => {
+        return (
+          `<button type="button" class="mapSearchResultItem" data-action="add-global-place" data-index="${idx}">` +
+            `<div class="mapSearchResultName">${escapeHtml(item.name || '')}</div>` +
+            `<div class="mapSearchResultLocation">${escapeHtml(item.location || '')}</div>` +
+          `</button>`
+        );
+      })
+      .join('');
+  };
+
+  const runSearch = async () => {
+    const q = String(input.value || '').trim();
+    if (!q) {
+      clearResults();
+      return;
+    }
+
+    if (abortController) {
+      try {
+        abortController.abort();
+      } catch {
+        // ignore
+      }
+    }
+    abortController = new AbortController();
+
+    try {
+      const items = await searchPlacesEverywhere(q, { signal: abortController.signal });
+      renderResults(items);
+    } catch (err) {
+      if (err && typeof err === 'object' && 'name' in err && err.name === 'AbortError') {
+        return;
+      }
+      const msg = err instanceof Error ? err.message : String(err);
+      setAuthStatus(msg);
+      clearResults();
+    }
+  };
+
+  input.addEventListener('input', () => {
+    if (debounceTimer) {
+      clearTimeout(debounceTimer);
+    }
+    debounceTimer = setTimeout(() => {
+      runSearch();
+    }, 250);
+  });
+
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      clearResults();
+      try {
+        input.blur();
+      } catch {
+        // ignore
+      }
+    }
+  });
+
+  const addGlobalPlaceAsPoi = async (item) => {
+    const auth = loadAuth();
+    if (!auth) {
+      setAuthStatus('Enter your key before adding POIs.');
+      return;
+    }
+    if (!item || typeof item.lat !== 'number' || typeof item.lng !== 'number') {
+      return;
+    }
+
+    const name = String(item.name || '').trim();
+    const location = String(item.location || '').trim();
+
+    const poiId = createUniquePoiId({ name: name || 'place', lat: item.lat, lng: item.lng });
+    const key = `poi:${poiId}`;
+
+    setAuthStatus('Adding POI…');
+    try {
+      await updateStorageRecord({
+        key,
+        name: name || poiId,
+        location,
+        details: '',
+        lat: item.lat,
+        lng: item.lng
+      });
+
+      pois[poiId] = {
+        id: poiId,
+        key,
+        name: name || poiId,
+        location,
+        details: '',
+        position: { lat: item.lat, lng: item.lng }
+      };
+
+      setAuthStatus('POI added');
+      clearResults();
+      input.value = '';
+
+      // Add marker immediately if the map is live.
+      if (map) {
+        const marker = createPoiMarker(pois[poiId]);
+        if (marker) {
+          poiMarkers.push(marker);
+          try {
+            map.easeTo({ center: [item.lng, item.lat], zoom: 14, duration: 650 });
+          } catch {
+            // ignore
+          }
+          openMarkerPopup(marker);
+          setTimeout(() => {
+            try {
+              const entry = poiMarkerById.get(poiId);
+              const popup = entry && entry.popup ? entry.popup : null;
+              const root = popup && typeof popup.getElement === 'function' ? popup.getElement() : null;
+              const textarea = root ? root.querySelector('textarea') : null;
+              if (textarea) {
+                textarea.focus();
+              }
+            } catch {
+              // ignore
+            }
+          }, 0);
+        }
+      }
+
+      renderSidebar();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setAuthStatus(`Add POI failed: ${msg}`);
+    }
+  };
+
+  resultsEl.addEventListener('click', (e) => {
+    const target = e.target instanceof Element ? e.target : null;
+    const actionEl = target ? target.closest('[data-action="add-global-place"]') : null;
+    if (!actionEl) {
+      return;
+    }
+
+    const idx = Number(actionEl.getAttribute('data-index'));
+    const item = Number.isFinite(idx) ? lastGlobalSearchResults[idx] : null;
+    if (!item) {
+      return;
+    }
+
+    addGlobalPlaceAsPoi(item);
+  });
+
+  document.addEventListener('click', (e) => {
+    const target = e.target instanceof Element ? e.target : null;
+    if (!target) {
+      return;
+    }
+    const wrap = target.closest('.mapSearch');
+    if (wrap) {
+      return;
+    }
+    clearResults();
+  });
+
+}
+
 
 function openMarkerPopup(marker) {
   if (!map || !marker || !marker.getPopup) {
     return;
   }
+
+  const setPopupAnchor = (popup, anchor) => {
+    if (!popup || !anchor) {
+      return;
+    }
+    try {
+      // MapLibre doesn't expose a public setAnchor API; options.anchor is used internally.
+      popup.options = popup.options || {};
+      popup.options.anchor = anchor;
+      if (typeof popup._update === 'function') {
+        popup._update();
+      }
+    } catch {
+      // ignore
+    }
+  };
+
+  const computeDesiredAnchor = (lngLat) => {
+    if (!map || !lngLat || typeof map.getContainer !== 'function' || typeof map.project !== 'function') {
+      return 'bottom';
+    }
+
+    const container = map.getContainer();
+    if (!container) {
+      return 'bottom';
+    }
+
+    const rect = container.getBoundingClientRect();
+    const w = rect && rect.width ? rect.width : 0;
+    const h = rect && rect.height ? rect.height : 0;
+    if (!w || !h) {
+      return 'bottom';
+    }
+
+    const pt = map.project(lngLat);
+    const EDGE_PAD = 16;
+    const HORZ_THRESHOLD = 220;
+    const VERT_THRESHOLD = 180;
+
+    const nearLeft = pt.x < EDGE_PAD + HORZ_THRESHOLD;
+    const nearRight = pt.x > w - (EDGE_PAD + HORZ_THRESHOLD);
+    const nearTop = pt.y < EDGE_PAD + VERT_THRESHOLD;
+
+    const vertical = nearTop ? 'top' : 'bottom';
+    if (nearLeft) {
+      return `${vertical}-left`;
+    }
+    if (nearRight) {
+      return `${vertical}-right`;
+    }
+    return vertical;
+  };
+
+  const nudgePopupIntoMapBounds = (popup) => {
+    try {
+      if (!map || !popup || typeof popup.getElement !== 'function' || typeof map.getContainer !== 'function') {
+        return;
+      }
+      const container = map.getContainer();
+      const popupEl = popup.getElement();
+      if (!container || !popupEl) {
+        return;
+      }
+      const mapRect = container.getBoundingClientRect();
+      const popupRect = popupEl.getBoundingClientRect();
+      if (!mapRect || !popupRect) {
+        return;
+      }
+
+      const PAD = 12;
+      const overflowLeft = popupRect.left < mapRect.left + PAD;
+      const overflowRight = popupRect.right > mapRect.right - PAD;
+      const overflowTop = popupRect.top < mapRect.top + PAD;
+
+      if (!overflowLeft && !overflowRight && !overflowTop) {
+        return;
+      }
+
+      const current = (popup.options && popup.options.anchor) || 'bottom';
+      const wantVertical = overflowTop ? 'top' : current.startsWith('top') ? 'top' : 'bottom';
+
+      if (overflowLeft) {
+        setPopupAnchor(popup, `${wantVertical}-left`);
+      } else if (overflowRight) {
+        setPopupAnchor(popup, `${wantVertical}-right`);
+      } else {
+        setPopupAnchor(popup, wantVertical);
+      }
+    } catch {
+      // ignore
+    }
+  };
 
   const popup = marker.getPopup();
   if (!popup) {
@@ -1863,7 +2540,9 @@ function openMarkerPopup(marker) {
 
   try {
     if (typeof marker.getLngLat === 'function' && typeof popup.setLngLat === 'function') {
-      popup.setLngLat(marker.getLngLat());
+      const lngLat = marker.getLngLat();
+      popup.setLngLat(lngLat);
+      setPopupAnchor(popup, computeDesiredAnchor(lngLat));
     }
   } catch {
     // ignore
@@ -1879,6 +2558,8 @@ function openMarkerPopup(marker) {
 
   try {
     popup.addTo(map);
+    // After the popup is in the DOM, confirm it isn't clipped by the map container.
+    requestAnimationFrame(() => nudgePopupIntoMapBounds(popup));
   } catch {
     // ignore
   }
@@ -1886,6 +2567,7 @@ function openMarkerPopup(marker) {
 
 async function main() {
   initAuthUi();
+  initPlaceSearchUi();
   await refreshPlacesAndRebuildMap({ reason: 'initial load' });
 }
 
