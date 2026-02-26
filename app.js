@@ -1154,7 +1154,12 @@ function initAuthUi() {
 
   input.value = loadAuth();
   input.addEventListener('change', () => {
-    saveAuth(input.value);
+    const next = String(input.value || '').trim();
+    const current = loadAuth();
+    if (next === current) {
+      return;
+    }
+    saveAuth(next);
     refreshPlacesAndRebuildMap({ reason: 'key updated' });
   });
   input.addEventListener('keydown', (e) => {
@@ -1162,7 +1167,12 @@ function initAuthUi() {
       return;
     }
     e.preventDefault();
-    saveAuth(input.value);
+    const next = String(input.value || '').trim();
+    const current = loadAuth();
+    if (next === current) {
+      return;
+    }
+    saveAuth(next);
     refreshPlacesAndRebuildMap({ reason: 'key updated' });
   });
 }

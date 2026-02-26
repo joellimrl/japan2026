@@ -12,7 +12,7 @@ const http = require('node:http');
 const path = require('node:path');
 const fs = require('node:fs/promises');
 
-const PORT = Number.parseInt(process.env.PORT || '8787', 10);
+const PORT = Number.parseInt(process.env.PORT || '5500', 10);
 const TARGET = String(process.env.TARGET || 'https://streetbot.fly.dev').replace(/\/$/, '');
 
 const ROOT_DIR = path.resolve(__dirname, '..');
