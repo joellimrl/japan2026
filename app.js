@@ -8,18 +8,8 @@ const COLLECTION_NAME = 'japan2026';
 const KEY_STORAGE_KEY = 'japan2026-key-v1';
 const PROD_API_BASE = 'https://streetbot.fly.dev';
 
-function isLocalDevHost() {
-  try {
-    const host = String(window.location && window.location.hostname ? window.location.hostname : '');
-    return host === 'localhost' || host === '127.0.0.1';
-  } catch {
-    return false;
-  }
-}
-
-// Local dev server proxies /api/* -> PROD_API_BASE/* to bypass CORS.
-// GitHub Pages uses PROD_API_BASE directly.
-const API_BASE = isLocalDevHost() ? '/api' : PROD_API_BASE;
+// API requests go directly to the production API (CORS is handled upstream).
+const API_BASE = PROD_API_BASE;
 const AUTH_HEADER_NAME = ['x', '-', 'auth'].join('');
 
 // Japan-wide default (blank map state)
@@ -98,6 +88,142 @@ function getPoiById(id) {
 
 let sidebarEventsBound = false;
 
+function getAllPoisSorted() {
+  return Object.values(pois || {})
+    .filter(Boolean)
+    .map((p) => ({
+      id: String(p.id || ''),
+      name: String(p.name || p.id || '').trim(),
+      details: String(p.details || '').trim()
+    }))
+    .filter((p) => p.id)
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function getPoiSuggestionMatches(query, { excludeIds } = {}) {
+  const q = String(query || '').trim().toLowerCase();
+  if (!q) {
+    return [];
+  }
+
+  const excludeSet = excludeIds instanceof Set ? excludeIds : null;
+
+  const all = getAllPoisSorted();
+  const matches = [];
+  for (const p of all) {
+    if (excludeSet && excludeSet.has(p.id)) {
+      continue;
+    }
+    const hay = `${p.name} ${p.id}`.toLowerCase();
+    if (hay.includes(q)) {
+      matches.push(p);
+    }
+    if (matches.length >= 12) {
+      break;
+    }
+  }
+  return matches;
+}
+
+function getExcludedPoiIdsForDay(dayIndex) {
+  const day = days && Number.isInteger(dayIndex) ? days[dayIndex] : null;
+  const exclude = new Set();
+  for (const id of (day && day.poiIds) || []) {
+    const clean = String(id || '').trim();
+    if (clean) {
+      exclude.add(clean);
+    }
+  }
+  return exclude;
+}
+
+function persistDayUpdate(dayIndex) {
+  const day = days[dayIndex];
+  if (!day) {
+    return Promise.resolve();
+  }
+
+  const rec = { key: day.key, date: day.date, stopId: day.stopId, summary: day.summary, poiIds: day.poiIds };
+  return updateStorageRecord(rec).then(() => {
+    setAuthStatus('Day updated');
+    plannedDatesIndex = buildPlannedDatesIndex(days);
+    renderSidebar();
+    try {
+      buildMap();
+    } catch {
+      // ignore
+    }
+  });
+}
+
+function addPoiToDay(dayIndex, poiIdRaw) {
+  const day = days[dayIndex];
+  if (!day) {
+    return Promise.resolve();
+  }
+  const poiId = String(poiIdRaw || '').trim();
+  if (!poiId) {
+    return Promise.resolve();
+  }
+  if (!getPoiById(poiId)) {
+    setAuthStatus(`Unknown POI id: ${poiId}`);
+    return Promise.resolve();
+  }
+  if (!Array.isArray(day.poiIds)) {
+    day.poiIds = [];
+  }
+  if (day.poiIds.includes(poiId)) {
+    return Promise.resolve();
+  }
+
+  day.poiIds.push(poiId);
+  return persistDayUpdate(dayIndex);
+}
+
+function removePoiFromDay(dayIndex, poiIdRaw) {
+  const day = days[dayIndex];
+  if (!day || !Array.isArray(day.poiIds)) {
+    return Promise.resolve();
+  }
+  const poiId = String(poiIdRaw || '').trim();
+  if (!poiId) {
+    return Promise.resolve();
+  }
+  const next = day.poiIds.filter((id) => String(id) !== poiId);
+  if (next.length === day.poiIds.length) {
+    return Promise.resolve();
+  }
+  day.poiIds = next;
+  return persistDayUpdate(dayIndex);
+}
+
+function renderPoiSuggest(suggestEl, matches) {
+  if (!suggestEl) {
+    return;
+  }
+
+  if (!matches || matches.length === 0) {
+    suggestEl.innerHTML = '';
+    suggestEl.hidden = true;
+    suggestEl.dataset.activeIndex = '-1';
+    return;
+  }
+
+  suggestEl.hidden = false;
+  suggestEl.dataset.activeIndex = '0';
+  suggestEl.innerHTML = matches
+    .map((p, idx) => {
+      const activeClass = idx === 0 ? ' is-active' : '';
+      return `
+        <button type="button" class="poiSuggestItem${activeClass}" data-action="pick-poi" data-poi-id="${escapeHtml(p.id)}">
+          <span class="poiSuggestName">${escapeHtml(p.name || p.id)}</span>
+          <span class="poiSuggestId">${escapeHtml(p.id)}</span>
+        </button>
+      `;
+    })
+    .join('');
+}
+
 function renderSidebar() {
   const container = qs('itinerary');
 
@@ -111,41 +237,49 @@ function renderSidebar() {
     return;
   }
 
-  const daysHtml = days.map((day, dayIndex) => {
-    const stop = getStopById(day.stopId);
-    const stopLabel = stop ? stop.name : '';
+  const daysHtml = days
+    .map((day, dayIndex) => {
+      const stop = getStopById(day.stopId);
+      const stopLabel = stop ? stop.name : '';
 
-    const pillParts = [];
-    if (stop) {
-      pillParts.push(`<span class="pill">${escapeHtml(stop.name)}</span>`);
-    }
+      const pillParts = [];
 
-    for (const poiId of day.poiIds || []) {
-      const poi = getPoiById(poiId);
-      if (!poi) {
-        continue;
+      for (const poiId of day.poiIds || []) {
+        const poi = getPoiById(poiId);
+        if (!poi) {
+          continue;
+        }
+        pillParts.push(
+          `<span class="pill" data-poi-id="${escapeHtml(poi.id)}">` +
+            `<span class="pillText">${escapeHtml(poi.name)}</span>` +
+            `<button type="button" class="pillRemove" aria-label="Remove" data-action="remove-poi" data-day-index="${dayIndex}" data-poi-id="${escapeHtml(poi.id)}">×</button>` +
+          `</span>`
+        );
       }
-      pillParts.push(`<span class="pill">${escapeHtml(poi.name)}</span>`);
-    }
 
-    const pillsHtml = pillParts.length ? `<div class="dayPlaces">${pillParts.join('')}</div>` : '';
+      const pillsHtml = `
+        <div class="dayPlaces" data-day-index="${dayIndex}">
+          <div class="dayPlacesPills">${pillParts.join('')}</div>
+          <input type="text" class="poiAddInput" placeholder="Type to add POI" autocomplete="off" spellcheck="false" autocapitalize="off" data-day-index="${dayIndex}" />
+          <div class="poiSuggest" hidden data-day-index="${dayIndex}"></div>
+        </div>
+      `;
 
-    return `
-      <div class="dayItem">
-        <div class="dayHeader">
-          <div class="dayDate" contenteditable="true" data-edit="date" data-day-index="${dayIndex}">${escapeHtml(day.date)}</div>
-          <div class="dayStop">${escapeHtml(stopLabel)}</div>
+      return `
+        <div class="dayItem">
+          <div class="dayHeader">
+            <div class="dayDate">${escapeHtml(day.date)}</div>
+            <div class="dayStop">${escapeHtml(stopLabel)}</div>
+          </div>
+          <div class="daySummary" contenteditable="true" data-edit="summary" data-day-index="${dayIndex}">${escapeHtml(day.summary)}</div>
+          ${pillsHtml}
+          <div class="dayActions">
+            <button type="button" data-action="focus" data-day-index="${dayIndex}">Focus</button>
+          </div>
         </div>
-        <div class="daySummary" contenteditable="true" data-edit="summary" data-day-index="${dayIndex}">${escapeHtml(day.summary)}</div>
-        ${pillsHtml}
-        <div class="dayActions">
-          <input type="text" class="addPoiInput" placeholder="Add POI id (e.g. sensoji)" data-day-index="${dayIndex}" />
-          <button type="button" data-action="add-poi" data-day-index="${dayIndex}">Add</button>
-          <button type="button" data-action="focus" data-day-index="${dayIndex}">Focus</button>
-        </div>
-      </div>
-    `;
-  }).join('');
+      `;
+    })
+    .join('');
 
   container.innerHTML = `
     <div class="dayList">
@@ -161,93 +295,326 @@ function renderSidebar() {
         return;
       }
 
-      const action = target.getAttribute('data-action');
-      const idxRaw = target.getAttribute('data-day-index');
-      if (!action || idxRaw == null) {
+      const actionEl = target.closest('[data-action]');
+      if (!(actionEl instanceof HTMLElement)) {
+        // Still allow focusing the POI input by clicking the POI area.
+        const dayPlaces = target.closest('.dayPlaces');
+        if (dayPlaces instanceof HTMLElement) {
+          const input = dayPlaces.querySelector('.poiAddInput');
+          if (input instanceof HTMLInputElement) {
+            try {
+              input.focus();
+            } catch {
+              // ignore
+            }
+          }
+        }
         return;
       }
 
-      const dayIndex = Number(idxRaw);
-      if (!Number.isInteger(dayIndex) || dayIndex < 0 || dayIndex >= days.length) {
-        return;
-      }
-
+      const action = actionEl.getAttribute('data-action');
       if (action === 'focus') {
+        const idxRaw = actionEl.getAttribute('data-day-index');
+        if (idxRaw == null) {
+          return;
+        }
+        const dayIndex = Number(idxRaw);
+        if (!Number.isInteger(dayIndex) || dayIndex < 0 || dayIndex >= days.length) {
+          return;
+        }
         focusDay(dayIndex);
+        return;
+      }
+
+      if (action === 'remove-poi') {
+        const idxRaw = actionEl.getAttribute('data-day-index');
+        const poiId = actionEl.getAttribute('data-poi-id');
+        const dayIndex = Number(idxRaw);
+        if (!Number.isInteger(dayIndex) || dayIndex < 0 || dayIndex >= days.length) {
+          return;
+        }
+        removePoiFromDay(dayIndex, poiId).catch((err) => {
+          const msg = err instanceof Error ? err.message : String(err);
+          setAuthStatus(`Update failed: ${msg}`);
+        });
+        return;
+      }
+
+      if (action === 'pick-poi') {
+        const poiId = actionEl.getAttribute('data-poi-id');
+        const dayPlaces = actionEl.closest('.dayPlaces');
+        if (!(dayPlaces instanceof HTMLElement)) {
+          return;
+        }
+        const idxRaw = dayPlaces.getAttribute('data-day-index');
+        const dayIndex = Number(idxRaw);
+        if (!Number.isInteger(dayIndex) || dayIndex < 0 || dayIndex >= days.length) {
+          return;
+        }
+
+        addPoiToDay(dayIndex, poiId)
+          .then(() => {
+            // After re-render, no direct DOM to clear; status already updated.
+          })
+          .catch((err) => {
+            const msg = err instanceof Error ? err.message : String(err);
+            setAuthStatus(`Update failed: ${msg}`);
+          });
+        return;
       }
     });
 
-    // Handle add-poi button
-    container.addEventListener('click', (e) => {
+    container.addEventListener('input', (e) => {
       const target = e.target;
-      if (!(target instanceof HTMLElement)) return;
-      const action = target.getAttribute('data-action');
-      if (action !== 'add-poi') return;
-      const idxRaw = target.getAttribute('data-day-index');
-      if (idxRaw == null) return;
-      const dayIndex = Number(idxRaw);
-      const input = container.querySelector(`.addPoiInput[data-day-index="${dayIndex}"]`);
-      if (!(input instanceof HTMLInputElement)) return;
-      const val = String(input.value || '').trim();
-      if (!val) return;
-      const day = days[dayIndex];
-      if (!day) return;
-      if (!Array.isArray(day.poiIds)) day.poiIds = [];
-      if (day.poiIds.includes(val)) return;
-      // Only allow adding existing POIs
-      if (!getPoiById(val)) {
-        setAuthStatus(`Unknown POI id: ${val}`);
+      if (!(target instanceof HTMLInputElement)) {
         return;
       }
-      day.poiIds.push(val);
-      // Persist
-      const rec = { key: day.key, date: day.date, stopId: day.stopId, summary: day.summary, poiIds: day.poiIds };
-      updateStorageRecord(rec).then(() => {
-        setAuthStatus('Day updated');
-        plannedDatesIndex = buildPlannedDatesIndex(days);
-        renderSidebar();
-        try { buildMap(); } catch (err) { /* ignore */ }
-      }).catch((err) => {
-        const msg = err instanceof Error ? err.message : String(err);
-        setAuthStatus(`Update failed: ${msg}`);
-      });
+      if (!target.classList.contains('poiAddInput')) {
+        return;
+      }
+
+      const dayPlaces = target.closest('.dayPlaces');
+      if (!(dayPlaces instanceof HTMLElement)) {
+        return;
+      }
+      const suggestEl = dayPlaces.querySelector('.poiSuggest');
+      if (!(suggestEl instanceof HTMLElement)) {
+        return;
+      }
+
+      const idxRaw = dayPlaces.getAttribute('data-day-index');
+      const dayIndex = Number(idxRaw);
+      const excludeIds = Number.isInteger(dayIndex) ? getExcludedPoiIdsForDay(dayIndex) : new Set();
+
+      const matches = getPoiSuggestionMatches(target.value, { excludeIds });
+      renderPoiSuggest(suggestEl, matches);
     });
+
+    container.addEventListener(
+      'keydown',
+      (e) => {
+        const target = e.target;
+        if (!(target instanceof HTMLInputElement)) {
+          return;
+        }
+        if (!target.classList.contains('poiAddInput')) {
+          return;
+        }
+
+        const dayPlaces = target.closest('.dayPlaces');
+        if (!(dayPlaces instanceof HTMLElement)) {
+          return;
+        }
+        const suggestEl = dayPlaces.querySelector('.poiSuggest');
+        if (!(suggestEl instanceof HTMLElement)) {
+          return;
+        }
+
+        const items = Array.from(suggestEl.querySelectorAll('.poiSuggestItem'));
+        const isOpen = !suggestEl.hidden && items.length > 0;
+        const activeIndex = Number(suggestEl.dataset.activeIndex || '-1');
+
+        const setActive = (nextIndex) => {
+          const idx = Math.max(0, Math.min(items.length - 1, nextIndex));
+          suggestEl.dataset.activeIndex = String(idx);
+          for (let i = 0; i < items.length; i += 1) {
+            items[i].classList.toggle('is-active', i === idx);
+          }
+        };
+
+        if (e.key === 'Escape') {
+          suggestEl.hidden = true;
+          suggestEl.innerHTML = '';
+          suggestEl.dataset.activeIndex = '-1';
+          return;
+        }
+
+        if (e.key === 'ArrowDown' && isOpen) {
+          e.preventDefault();
+          setActive(Number.isFinite(activeIndex) ? activeIndex + 1 : 0);
+          return;
+        }
+
+        if (e.key === 'ArrowUp' && isOpen) {
+          e.preventDefault();
+          setActive(Number.isFinite(activeIndex) ? activeIndex - 1 : 0);
+          return;
+        }
+
+        if (e.key === 'Enter') {
+          const typed = String(target.value || '').trim();
+          const idxRaw = dayPlaces.getAttribute('data-day-index');
+          const dayIndex = Number(idxRaw);
+          if (!Number.isInteger(dayIndex) || dayIndex < 0 || dayIndex >= days.length) {
+            return;
+          }
+
+          if (isOpen) {
+            e.preventDefault();
+            const idx = Number.isFinite(activeIndex) && activeIndex >= 0 ? activeIndex : 0;
+            const btn = items[idx];
+            if (btn instanceof HTMLElement) {
+              const poiId = btn.getAttribute('data-poi-id');
+              addPoiToDay(dayIndex, poiId)
+                .catch((err) => {
+                  const msg = err instanceof Error ? err.message : String(err);
+                  setAuthStatus(`Update failed: ${msg}`);
+                });
+            }
+            return;
+          }
+
+          // If the dropdown isn't open, allow quick-add by exact id or exact unique name.
+          if (typed) {
+            // If it's already on the day, do nothing.
+            if (Array.isArray(days[dayIndex].poiIds) && days[dayIndex].poiIds.includes(typed)) {
+              return;
+            }
+
+            const byId = getPoiById(typed);
+            if (byId) {
+              e.preventDefault();
+              addPoiToDay(dayIndex, typed)
+                .catch((err) => {
+                  const msg = err instanceof Error ? err.message : String(err);
+                  setAuthStatus(`Update failed: ${msg}`);
+                });
+              return;
+            }
+
+            const all = getAllPoisSorted();
+            const matchesByName = all.filter((p) => p.name.toLowerCase() === typed.toLowerCase());
+            if (matchesByName.length === 1) {
+              e.preventDefault();
+              addPoiToDay(dayIndex, matchesByName[0].id)
+                .catch((err) => {
+                  const msg = err instanceof Error ? err.message : String(err);
+                  setAuthStatus(`Update failed: ${msg}`);
+                });
+            }
+          }
+        }
+      },
+      true
+    );
+
+    container.addEventListener(
+      'blur',
+      (e) => {
+        const target = e.target;
+        if (!(target instanceof HTMLInputElement)) {
+          return;
+        }
+        if (!target.classList.contains('poiAddInput')) {
+          return;
+        }
+
+        const dayPlaces = target.closest('.dayPlaces');
+        if (!(dayPlaces instanceof HTMLElement)) {
+          return;
+        }
+        const suggestEl = dayPlaces.querySelector('.poiSuggest');
+        if (!(suggestEl instanceof HTMLElement)) {
+          return;
+        }
+
+        // Delay so clicks on suggestion items still work.
+        setTimeout(() => {
+          try {
+            if (dayPlaces.contains(document.activeElement)) {
+              return;
+            }
+          } catch {
+            // ignore
+          }
+          suggestEl.hidden = true;
+          suggestEl.innerHTML = '';
+          suggestEl.dataset.activeIndex = '-1';
+        }, 120);
+      },
+      true
+    );
+
+    // Track original values for contenteditable fields so we can avoid
+    // calling the storage endpoint when nothing changed.
+    container.addEventListener(
+      'focusin',
+      (e) => {
+        const target = e.target;
+        if (!(target instanceof HTMLElement)) {
+          return;
+        }
+        const edit = target.getAttribute('data-edit');
+        const idxRaw = target.getAttribute('data-day-index');
+        if (!edit || idxRaw == null) {
+          return;
+        }
+
+        target.dataset.originalValue = String(target.textContent || '').trim();
+      },
+      true
+    );
 
     // Handle contenteditable saves (Enter or blur)
     container.addEventListener('keydown', (e) => {
       const target = e.target;
-      if (!(target instanceof HTMLElement)) return;
+      if (!(target instanceof HTMLElement)) {
+        return;
+      }
       const edit = target.getAttribute('data-edit');
       const idxRaw = target.getAttribute('data-day-index');
-      if (!edit || idxRaw == null) return;
+      if (!edit || idxRaw == null) {
+        return;
+      }
       if (e.key === 'Enter') {
         e.preventDefault();
-        try { target.blur(); } catch { /* ignore */ }
+        try {
+          target.blur();
+        } catch {
+          // ignore
+        }
       }
     }, true);
 
     container.addEventListener('blur', (e) => {
       const target = e.target;
-      if (!(target instanceof HTMLElement)) return;
+      if (!(target instanceof HTMLElement)) {
+        return;
+      }
       const edit = target.getAttribute('data-edit');
       const idxRaw = target.getAttribute('data-day-index');
-      if (!edit || idxRaw == null) return;
-      const dayIndex = Number(idxRaw);
-      if (!Number.isInteger(dayIndex) || dayIndex < 0 || dayIndex >= days.length) return;
-      const day = days[dayIndex];
-      if (!day) return;
-      const newValue = String(target.textContent || '').trim();
-      if (edit === 'date') {
-        day.date = newValue;
-      } else if (edit === 'summary') {
-        day.summary = newValue;
+      if (!edit || idxRaw == null) {
+        return;
       }
+      const dayIndex = Number(idxRaw);
+      if (!Number.isInteger(dayIndex) || dayIndex < 0 || dayIndex >= days.length) {
+        return;
+      }
+      const day = days[dayIndex];
+      if (!day) {
+        return;
+      }
+      const newValue = String(target.textContent || '').trim();
+      if (edit !== 'summary') {
+        return;
+      }
+
+      const originalValue = String(target.dataset.originalValue ?? day.summary ?? '').trim();
+      if (newValue === originalValue) {
+        return;
+      }
+
+      day.summary = newValue;
       const rec = { key: day.key, date: day.date, stopId: day.stopId, summary: day.summary, poiIds: day.poiIds };
       updateStorageRecord(rec).then(() => {
         setAuthStatus('Day updated');
         plannedDatesIndex = buildPlannedDatesIndex(days);
         renderSidebar();
-        try { buildMap(); } catch (err) { /* ignore */ }
+        try {
+          buildMap();
+        } catch {
+          // ignore
+        }
       }).catch((err) => {
         const msg = err instanceof Error ? err.message : String(err);
         setAuthStatus(`Update failed: ${msg}`);
@@ -920,38 +1287,71 @@ function buildMap() {
       const popup = new window.maplibregl.Popup({ offset: 16 }).setDOMContent(popupEl);
 
       // Auto-save helper
-      const scheduleSave = (delay = 0) => {
+      let poiSaveInFlight = false;
+      let poiSaveInFlightFingerprint = '';
+
+      const scheduleSave = () => {
+        const nextLatParsed = Number.parseFloat(String(latInput.value || ''));
+        const nextLngParsed = Number.parseFloat(String(lngInput.value || ''));
+
+        const nextName = String(nameInput.value || '').trim();
+        const nextDetails = String(detailsInput.value || '').trim();
+        const nextLat = Number.isFinite(nextLatParsed) ? nextLatParsed : poi.position.lat;
+        const nextLng = Number.isFinite(nextLngParsed) ? nextLngParsed : poi.position.lng;
+
+        const currentName = String(poi.name || '').trim();
+        const currentDetails = String(poi.details || '').trim();
+        const currentLat = poi.position.lat;
+        const currentLng = poi.position.lng;
+
+        const hasChanges = nextName !== currentName || nextDetails !== currentDetails || nextLat !== currentLat || nextLng !== currentLng;
+        if (!hasChanges) {
+          return;
+        }
+
+        const fingerprint = `${nextName}\n${nextDetails}\n${nextLat}\n${nextLng}`;
+        if (poiSaveInFlight && fingerprint === poiSaveInFlightFingerprint) {
+          return;
+        }
+
+        poiSaveInFlight = true;
+        poiSaveInFlightFingerprint = fingerprint;
         saveStatus.textContent = 'Saving...';
-        const nextLat = Number.parseFloat(String(latInput.value || ''));
-        const nextLng = Number.parseFloat(String(lngInput.value || ''));
+
         const next = {
           key: poi.key,
-          name: String(nameInput.value || '').trim(),
-          details: String(detailsInput.value || '').trim(),
-          lat: Number.isFinite(nextLat) ? nextLat : poi.position.lat,
-          lng: Number.isFinite(nextLng) ? nextLng : poi.position.lng,
-          position: { lat: Number.isFinite(nextLat) ? nextLat : poi.position.lat, lng: Number.isFinite(nextLng) ? nextLng : poi.position.lng }
+          name: nextName,
+          details: nextDetails,
+          lat: nextLat,
+          lng: nextLng,
+          position: { lat: nextLat, lng: nextLng }
         };
 
-        updateStorageRecord(next).then(() => {
-          saveStatus.textContent = 'Saved';
-          // Update local state
-          poi.name = next.name;
-          poi.details = next.details;
-          poi.position = { lat: next.lat, lng: next.lng };
-          try {
-            const entry = poiMarkerById.get(poi.id);
-            if (entry && entry.marker && typeof entry.marker.setLngLat === 'function') {
-              entry.marker.setLngLat([poi.position.lng, poi.position.lat]);
+        updateStorageRecord(next)
+          .then(() => {
+            saveStatus.textContent = 'Saved';
+            // Update local state
+            poi.name = next.name;
+            poi.details = next.details;
+            poi.position = { lat: next.lat, lng: next.lng };
+            try {
+              const entry = poiMarkerById.get(poi.id);
+              if (entry && entry.marker && typeof entry.marker.setLngLat === 'function') {
+                entry.marker.setLngLat([poi.position.lng, poi.position.lat]);
+              }
+              renderSidebar();
+            } catch (_err) {
+              // ignore
             }
-            renderSidebar();
-          } catch (err) {
-            // ignore
-          }
-        }).catch((err) => {
-          const msg = err instanceof Error ? err.message : String(err);
-          saveStatus.textContent = `Save failed: ${msg}`;
-        });
+          })
+          .catch((err) => {
+            const msg = err instanceof Error ? err.message : String(err);
+            saveStatus.textContent = `Save failed: ${msg}`;
+          })
+          .finally(() => {
+            poiSaveInFlight = false;
+            poiSaveInFlightFingerprint = '';
+          });
       };
 
       // Save on blur or Enter
@@ -959,11 +1359,19 @@ function buildMap() {
         inputEl.addEventListener('keydown', (ev) => {
           if (ev.key === 'Enter' && ev.target === nameInput) {
             ev.preventDefault();
-            try { detailsInput.focus(); } catch { /* ignore */ }
+            try {
+              detailsInput.focus();
+            } catch {
+              // ignore
+            }
           }
           if (ev.key === 'Enter' && (ev.target === latInput || ev.target === lngInput)) {
             ev.preventDefault();
-            try { ev.target.blur(); } catch { /* ignore */ }
+            try {
+              ev.target.blur();
+            } catch {
+              // ignore
+            }
           }
         });
 
@@ -1223,6 +1631,31 @@ function buildStateFromBackendRecords(records) {
         poiIds
       });
     }
+  }
+
+  // Enforce: hotels/stops are not POIs.
+  const stopIdSet = new Set(nextStops.map((s) => String(s && s.id ? s.id : '')).filter(Boolean));
+  for (const day of nextDays) {
+    if (!day) {
+      continue;
+    }
+
+    const clean = [];
+    for (const poiIdRaw of day.poiIds || []) {
+      const poiId = String(poiIdRaw || '').trim();
+      if (!poiId) {
+        continue;
+      }
+      const parsedKey = parsePlaceKey(poiId);
+      if (parsedKey && parsedKey.type === 'stop') {
+        continue;
+      }
+      if (stopIdSet.has(poiId)) {
+        continue;
+      }
+      clean.push(poiId);
+    }
+    day.poiIds = clean;
   }
 
   // Remove any POIs that are actually stops (hotels are shown in the stop list)

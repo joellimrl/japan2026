@@ -229,9 +229,68 @@ button.secondary {
 
 .dayPlaces {
     margin-top: 6px;
+    border: 1px solid #d0d0d0;
+    border-radius: 10px;
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.dayPlaces:focus-within {
+    border-color: #333;
+}
+
+.dayPlacesPills {
     display: flex;
     flex-wrap: wrap;
     gap: 6px;
+    min-height: 22px;
+}
+
+.poiAddInput {
+    width: 100%;
+    padding: 8px 10px;
+    border-radius: 10px;
+    border: 1px solid #e6e6e6;
+    font-size: 12px;
+}
+
+.poiSuggest {
+    border: 1px solid #e6e6e6;
+    border-radius: 10px;
+    overflow: hidden;
+    background: #ffffff;
+}
+
+.poiSuggestItem {
+    width: 100%;
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 8px 10px;
+    border: 0;
+    border-radius: 0;
+    background: #ffffff;
+    cursor: pointer;
+    font-size: 12px;
+    text-align: left;
+}
+
+.poiSuggestItem:hover,
+.poiSuggestItem.is-active {
+    background: #f6f6f6;
+}
+
+.poiSuggestName {
+    color: #333;
+}
+
+.poiSuggestId {
+    color: #666;
+    font-size: 11px;
+    white-space: nowrap;
 }
 
 .pill {
@@ -241,6 +300,29 @@ button.secondary {
     border: 1px solid #e6e6e6;
     background: #ffffff;
     color: #333;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.pillRemove {
+    border: 0;
+    background: transparent;
+    padding: 0;
+    margin: 0;
+    width: 16px;
+    height: 16px;
+    border-radius: 999px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    line-height: 1;
+    color: #333;
+}
+
+.pillRemove:hover {
+    background: #f6f6f6;
 }
 
 .dayActions {

@@ -27,11 +27,6 @@ Places (stops + POIs) and the day-by-day itinerary are loaded from Streetbot sto
 - The app reads `stop:*`, `poi:*`, and `day:*` records from the `japan2026` collection
 - To update data, write updated records into storage 
 
-## Local dev (CORS-free)
+## Local dev
 
-When running locally, you can use the dev server in [server/dev-server.js](server/dev-server.js). It serves the static site and proxies API calls via same-origin `/api/*`, which avoids browser CORS.
-
-- Run: `node server/dev-server.js`
-- Open: `http://127.0.0.1:8787/`
-
-In local dev, the app calls `/api/storage/...` which the dev server forwards to `https://streetbot.fly.dev/storage/...`.
+Serve the folder with any static web server and open `index.html`. API calls go directly to `https://streetbot.fly.dev`.
