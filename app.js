@@ -133,12 +133,14 @@ function renderSidebar() {
     return `
       <div class="dayItem">
         <div class="dayHeader">
-          <div class="dayDate">${escapeHtml(day.date)}</div>
+          <div class="dayDate" contenteditable="true" data-edit="date" data-day-index="${dayIndex}">${escapeHtml(day.date)}</div>
           <div class="dayStop">${escapeHtml(stopLabel)}</div>
         </div>
-        <div class="daySummary">${escapeHtml(day.summary)}</div>
+        <div class="daySummary" contenteditable="true" data-edit="summary" data-day-index="${dayIndex}">${escapeHtml(day.summary)}</div>
         ${pillsHtml}
         <div class="dayActions">
+          <input type="text" class="addPoiInput" placeholder="Add POI id (e.g. sensoji)" data-day-index="${dayIndex}" />
+          <button type="button" data-action="add-poi" data-day-index="${dayIndex}">Add</button>
           <button type="button" data-action="focus" data-day-index="${dayIndex}">Focus</button>
         </div>
       </div>
@@ -174,6 +176,83 @@ function renderSidebar() {
         focusDay(dayIndex);
       }
     });
+
+    // Handle add-poi button
+    container.addEventListener('click', (e) => {
+      const target = e.target;
+      if (!(target instanceof HTMLElement)) return;
+      const action = target.getAttribute('data-action');
+      if (action !== 'add-poi') return;
+      const idxRaw = target.getAttribute('data-day-index');
+      if (idxRaw == null) return;
+      const dayIndex = Number(idxRaw);
+      const input = container.querySelector(`.addPoiInput[data-day-index="${dayIndex}"]`);
+      if (!(input instanceof HTMLInputElement)) return;
+      const val = String(input.value || '').trim();
+      if (!val) return;
+      const day = days[dayIndex];
+      if (!day) return;
+      if (!Array.isArray(day.poiIds)) day.poiIds = [];
+      if (day.poiIds.includes(val)) return;
+      // Only allow adding existing POIs
+      if (!getPoiById(val)) {
+        setAuthStatus(`Unknown POI id: ${val}`);
+        return;
+      }
+      day.poiIds.push(val);
+      // Persist
+      const rec = { key: day.key, date: day.date, stopId: day.stopId, summary: day.summary, poiIds: day.poiIds };
+      updateStorageRecord(rec).then(() => {
+        setAuthStatus('Day updated');
+        plannedDatesIndex = buildPlannedDatesIndex(days);
+        renderSidebar();
+        try { buildMap(); } catch (err) { /* ignore */ }
+      }).catch((err) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        setAuthStatus(`Update failed: ${msg}`);
+      });
+    });
+
+    // Handle contenteditable saves (Enter or blur)
+    container.addEventListener('keydown', (e) => {
+      const target = e.target;
+      if (!(target instanceof HTMLElement)) return;
+      const edit = target.getAttribute('data-edit');
+      const idxRaw = target.getAttribute('data-day-index');
+      if (!edit || idxRaw == null) return;
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        try { target.blur(); } catch { /* ignore */ }
+      }
+    }, true);
+
+    container.addEventListener('blur', (e) => {
+      const target = e.target;
+      if (!(target instanceof HTMLElement)) return;
+      const edit = target.getAttribute('data-edit');
+      const idxRaw = target.getAttribute('data-day-index');
+      if (!edit || idxRaw == null) return;
+      const dayIndex = Number(idxRaw);
+      if (!Number.isInteger(dayIndex) || dayIndex < 0 || dayIndex >= days.length) return;
+      const day = days[dayIndex];
+      if (!day) return;
+      const newValue = String(target.textContent || '').trim();
+      if (edit === 'date') {
+        day.date = newValue;
+      } else if (edit === 'summary') {
+        day.summary = newValue;
+      }
+      const rec = { key: day.key, date: day.date, stopId: day.stopId, summary: day.summary, poiIds: day.poiIds };
+      updateStorageRecord(rec).then(() => {
+        setAuthStatus('Day updated');
+        plannedDatesIndex = buildPlannedDatesIndex(days);
+        renderSidebar();
+        try { buildMap(); } catch (err) { /* ignore */ }
+      }).catch((err) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        setAuthStatus(`Update failed: ${msg}`);
+      });
+    }, true);
   }
 }
 
@@ -780,17 +859,118 @@ function buildMap() {
       wrap.append(dateEl, el);
 
       const planned = formatPlannedDatesShort(getPlannedDatesForPoi(poi.id));
-      const plannedHtml = planned ? `<div style="margin-bottom:6px">Planned: ${escapeHtml(planned)}</div>` : '';
 
-      const popup = new window.maplibregl.Popup({ offset: 16 }).setHTML(
-        `
-          <div style="min-width:220px">
-            <div style="font-weight:700;margin-bottom:4px">${escapeHtml(poi.name)}</div>
-            ${plannedHtml}
-            <div style="color:#555">${escapeHtml(poi.details || '')}</div>
-          </div>
-        `
-      );
+      // Build editable popup DOM for POIs
+      const popupEl = document.createElement('div');
+      popupEl.style.minWidth = '260px';
+
+      const titleRow = document.createElement('div');
+      titleRow.style.fontWeight = '700';
+      titleRow.style.marginBottom = '6px';
+
+      const nameInput = document.createElement('input');
+      nameInput.type = 'text';
+      nameInput.value = poi.name || '';
+      nameInput.style.width = '100%';
+      nameInput.style.fontWeight = '700';
+      nameInput.style.marginBottom = '6px';
+
+      titleRow.appendChild(nameInput);
+      popupEl.appendChild(titleRow);
+
+      if (planned) {
+        const plannedDiv = document.createElement('div');
+        plannedDiv.style.marginBottom = '6px';
+        plannedDiv.textContent = `Planned: ${planned}`;
+        popupEl.appendChild(plannedDiv);
+      }
+
+      const detailsInput = document.createElement('textarea');
+      detailsInput.rows = 3;
+      detailsInput.style.width = '100%';
+      detailsInput.value = poi.details || '';
+      detailsInput.style.marginBottom = '6px';
+      popupEl.appendChild(detailsInput);
+
+      const coordRow = document.createElement('div');
+      coordRow.style.display = 'flex';
+      coordRow.style.gap = '6px';
+
+      const latInput = document.createElement('input');
+      latInput.type = 'text';
+      latInput.value = String(poi.position.lat);
+      latInput.style.flex = '1';
+      latInput.placeholder = 'lat';
+
+      const lngInput = document.createElement('input');
+      lngInput.type = 'text';
+      lngInput.value = String(poi.position.lng);
+      lngInput.style.flex = '1';
+      lngInput.placeholder = 'lng';
+
+      coordRow.appendChild(latInput);
+      coordRow.appendChild(lngInput);
+      popupEl.appendChild(coordRow);
+
+      const saveStatus = document.createElement('div');
+      saveStatus.style.marginTop = '6px';
+      saveStatus.style.color = '#333';
+      popupEl.appendChild(saveStatus);
+
+      const popup = new window.maplibregl.Popup({ offset: 16 }).setDOMContent(popupEl);
+
+      // Auto-save helper
+      const scheduleSave = (delay = 0) => {
+        saveStatus.textContent = 'Saving...';
+        const nextLat = Number.parseFloat(String(latInput.value || ''));
+        const nextLng = Number.parseFloat(String(lngInput.value || ''));
+        const next = {
+          key: poi.key,
+          name: String(nameInput.value || '').trim(),
+          details: String(detailsInput.value || '').trim(),
+          lat: Number.isFinite(nextLat) ? nextLat : poi.position.lat,
+          lng: Number.isFinite(nextLng) ? nextLng : poi.position.lng,
+          position: { lat: Number.isFinite(nextLat) ? nextLat : poi.position.lat, lng: Number.isFinite(nextLng) ? nextLng : poi.position.lng }
+        };
+
+        updateStorageRecord(next).then(() => {
+          saveStatus.textContent = 'Saved';
+          // Update local state
+          poi.name = next.name;
+          poi.details = next.details;
+          poi.position = { lat: next.lat, lng: next.lng };
+          try {
+            const entry = poiMarkerById.get(poi.id);
+            if (entry && entry.marker && typeof entry.marker.setLngLat === 'function') {
+              entry.marker.setLngLat([poi.position.lng, poi.position.lat]);
+            }
+            renderSidebar();
+          } catch (err) {
+            // ignore
+          }
+        }).catch((err) => {
+          const msg = err instanceof Error ? err.message : String(err);
+          saveStatus.textContent = `Save failed: ${msg}`;
+        });
+      };
+
+      // Save on blur or Enter
+      for (const inputEl of [nameInput, detailsInput, latInput, lngInput]) {
+        inputEl.addEventListener('keydown', (ev) => {
+          if (ev.key === 'Enter' && ev.target === nameInput) {
+            ev.preventDefault();
+            try { detailsInput.focus(); } catch { /* ignore */ }
+          }
+          if (ev.key === 'Enter' && (ev.target === latInput || ev.target === lngInput)) {
+            ev.preventDefault();
+            try { ev.target.blur(); } catch { /* ignore */ }
+          }
+        });
+
+        inputEl.addEventListener('blur', () => {
+          scheduleSave();
+        });
+      }
 
       const marker = new window.maplibregl.Marker({ element: wrap, anchor: 'bottom' })
         .setLngLat([poi.position.lng, poi.position.lat])
@@ -929,6 +1109,41 @@ async function fetchBackendPlaces(auth) {
   return payload.data;
 }
 
+async function updateStorageRecord(record) {
+  const auth = loadAuth();
+  if (!auth) {
+    throw new Error('No auth available');
+  }
+
+  // backend expects POST /storage with JSON body { collection, key, ... }
+  const url = `${API_BASE}/storage`;
+
+  const payloadBody = Object.assign({ collection: COLLECTION_NAME }, record);
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      [AUTH_HEADER_NAME]: auth
+    },
+    body: JSON.stringify(payloadBody)
+  });
+
+  let payload = null;
+  try {
+    payload = await res.json();
+  } catch {
+    // ignore
+  }
+
+  if (!res.ok) {
+    const statusMsg = payload && payload.status ? ` (${payload.status})` : '';
+    throw new Error(`Storage update failed: HTTP ${res.status}${statusMsg}`);
+  }
+
+  return payload;
+}
+
 function getLatLngFromRecord(record) {
   const lat = typeof record.lat === 'number' ? record.lat : record.position && typeof record.position.lat === 'number' ? record.position.lat : null;
   const lng = typeof record.lng === 'number' ? record.lng : record.position && typeof record.position.lng === 'number' ? record.position.lng : null;
@@ -1007,6 +1222,13 @@ function buildStateFromBackendRecords(records) {
         summary,
         poiIds
       });
+    }
+  }
+
+  // Remove any POIs that are actually stops (hotels are shown in the stop list)
+  for (const s of nextStops) {
+    if (s && s.id && Object.prototype.hasOwnProperty.call(nextPois, s.id)) {
+      delete nextPois[s.id];
     }
   }
 
