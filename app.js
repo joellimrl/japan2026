@@ -1629,12 +1629,6 @@ function buildMap() {
   });
 
   map.addControl(new window.maplibregl.NavigationControl({ showCompass: true }), 'top-right');
-  map.addControl(
-    new window.maplibregl.AttributionControl({
-      compact: true,
-      customAttribution: 'OpenFreeMap © OpenMapTiles Data from OpenStreetMap'
-    })
-  );
 
   map.on('load', () => {
     setEnglishLabels();
