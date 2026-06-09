@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Japan 2026 — Route Map</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Inter', system-ui, sans-serif; background: #1a1a2e; }
+
+    #map { width: 100%; height: 100vh; }
+
+    .legend {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      background: rgba(26, 26, 46, 0.95);
+      backdrop-filter: blur(10px);
+      border-radius: 12px;
+      padding: 20px;
+      color: #e8e3dc;
+      z-index: 1000;
+      max-height: calc(100vh - 40px);
+      overflow-y: auto;
+      min-width: 220px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+    }
+
+    .legend h2 {
+      font-size: 14px;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      margin-bottom: 16px;
+      color: #fff;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 6px 8px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: background 0.15s;
+      margin-bottom: 2px;
+    }
+
+    .legend-item:hover { background: rgba(255,255,255,0.08); }
+    .legend-item.active { background: rgba(255,255,255,0.12); }
+    .legend-item.dimmed { opacity: 0.35; }
+
+    .legend-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .legend-label {
+      font-size: 13px;
+      line-height: 1.3;
+    }
+
+    .legend-date {
+      font-size: 11px;
+      color: #888;
+    }
+
+    .back-link {
+      position: fixed;
+      top: 20px;
+      left: 20px;
+      background: rgba(26, 26, 46, 0.95);
+      backdrop-filter: blur(10px);
+      color: #e8e3dc;
+      text-decoration: none;
+      padding: 10px 16px;
+      border-radius: 8px;
+      font-size: 13px;
+      z-index: 1000;
+      transition: background 0.15s;
+    }
+    .back-link:hover { background: rgba(26, 26, 46, 1); }
+
+    .leaflet-popup-content {
+      font-family: 'Inter', system-ui, sans-serif;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    .popup-time { font-weight: 600; color: #333; }
+    .popup-duration { color: #666; font-size: 12px; }
+  </style>
+</head>
+<body>
+
+<div id="map"></div>
+
+<a href="index.html" class="back-link">&larr; Back to blog</a>
+
+<div class="legend" id="legend">
+  <h2>Route Map</h2>
+  <div id="legend-items"></div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const DAY_COLORS = {
+  '2026-04-25': '#FF6B6B',
+  '2026-04-26': '#FF8E53',
+  '2026-04-27': '#FFC145',
+  '2026-04-28': '#A8E063',
+  '2026-04-29': '#4ECB71',
+  '2026-04-30': '#36D1DC',
+  '2026-05-01': '#5B86E5',
+  '2026-05-02': '#7C5CE5',
+  '2026-05-03': '#C471ED',
+  '2026-05-04': '#F64F59',
+  '2026-05-05': '#12C2E9',
+  '2026-05-06': '#F5AF19',
+};
+
+const DAY_LABELS = {
+  '2026-04-25': 'Day 1 — Arrival (Osaka)',
+  '2026-04-26': 'Day 2 — USJ',
+  '2026-04-27': 'Day 3 — USJ',
+  '2026-04-28': 'Day 4 — Kyoto',
+  '2026-04-29': 'Day 5 — Kyoto (Kimono)',
+  '2026-04-30': 'Day 6 — Kobe',
+  '2026-05-01': 'Day 7 — Kobe (Wagyu)',
+  '2026-05-02': 'Day 8 — Herb Garden',
+  '2026-05-03': 'Day 9 — Osaka',
+  '2026-05-04': 'Day 10 — Osaka',
+  '2026-05-05': 'Day 11 — Osaka',
+  '2026-05-06': 'Day 12 — Departure',
+};
+
+const map = L.map('map', {
+  center: [34.75, 135.4],
+  zoom: 11,
+  zoomControl: false,
+});
+
+L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+  attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
+  maxZoom: 19,
+}).addTo(map);
+
+let dayLayers = {};
+let activeDays = new Set(Object.keys(DAY_COLORS));
+
+fetch('js/timeline_data.json')
+  .then(r => r.json())
+  .then(data => {
+    const allBounds = [];
+
+    Object.entries(data.days).forEach(([day, dayData]) => {
+      const color = DAY_COLORS[day];
+      const group = L.layerGroup().addTo(map);
+      dayLayers[day] = group;
+
+      // Draw path
+      if (dayData.path_points.length > 1) {
+        const polyline = L.polyline(dayData.path_points, {
+          color: color,
+          weight: 3,
+          opacity: 0.7,
+          smoothFactor: 1,
+        }).addTo(group);
+        allBounds.push(...dayData.path_points);
+      }
+
+      // Add visit markers
+      dayData.visits.forEach(visit => {
+        const dur = Math.round(visit.duration_min);
+        const durText = dur >= 60 ? `${Math.floor(dur/60)}h ${dur%60}m` : `${dur}m`;
+
+        const marker = L.circleMarker([visit.lat, visit.lng], {
+          radius: Math.min(8, Math.max(4, dur / 30)),
+          fillColor: color,
+          fillOpacity: 0.9,
+          color: '#fff',
+          weight: 1.5,
+        }).addTo(group);
+
+        marker.bindPopup(
+          `<div><span class="popup-time">${visit.start} – ${visit.end}</span><br>`
+          + `<span class="popup-duration">${durText}</span></div>`
+        );
+
+        allBounds.push([visit.lat, visit.lng]);
+      });
+    });
+
+    // Fit map to all points
+    if (allBounds.length) {
+      map.fitBounds(allBounds, { padding: [60, 60] });
+    }
+
+    // Build legend
+    buildLegend();
+
+    // Store per-day path points and start animation
+    window._dayPathPoints = {};
+    Object.entries(data.days).forEach(([day, dayData]) => {
+      if (dayData.path_points.length > 1) {
+        window._dayPathPoints[day] = dayData.path_points;
+      }
+    });
+    buildFullPath(data);
+    startAnimation();
+  });
+
+function buildLegend() {
+  const container = document.getElementById('legend-items');
+  Object.entries(DAY_LABELS).forEach(([day, label]) => {
+    const item = document.createElement('div');
+    item.className = 'legend-item active';
+    item.dataset.day = day;
+    item.innerHTML = `
+      <div class="legend-dot" style="background:${DAY_COLORS[day]}"></div>
+      <div>
+        <div class="legend-label">${label}</div>
+        <div class="legend-date">${day.slice(5)}</div>
+      </div>
+    `;
+    item.addEventListener('click', () => toggleDay(day, item));
+    container.appendChild(item);
+  });
+}
+
+function toggleDay(day, el) {
+  if (activeDays.has(day)) {
+    activeDays.delete(day);
+    map.removeLayer(dayLayers[day]);
+    el.classList.remove('active');
+    el.classList.add('dimmed');
+  } else {
+    activeDays.add(day);
+    map.addLayer(dayLayers[day]);
+    el.classList.add('active');
+    el.classList.remove('dimmed');
+  }
+}
+
+// ── Animated moving marker ──────────────────────────────────
+let animMarker = null;
+let allPathPoints = [];
+let animFrame = null;
+let animStart = null;
+const SPEED = 0.00015; // map units per ms (~walking/transit pace visually)
+
+function buildFullPath(data) {
+  const dayOrder = Object.keys(DAY_COLORS);
+  dayOrder.forEach(day => {
+    const dayData = data.days[day];
+    if (dayData && dayData.path_points.length > 1) {
+      allPathPoints.push(...dayData.path_points);
+    }
+  });
+}
+
+function getPointAtDistance(points, dist) {
+  let accumulated = 0;
+  for (let i = 0; i < points.length - 1; i++) {
+    const dx = points[i+1][1] - points[i][1];
+    const dy = points[i+1][0] - points[i][0];
+    const segLen = Math.sqrt(dx*dx + dy*dy);
+    if (accumulated + segLen >= dist) {
+      const t = (dist - accumulated) / segLen;
+      return [
+        points[i][0] + t * dy,
+        points[i][1] + t * dx
+      ];
+    }
+    accumulated += segLen;
+  }
+  return points[points.length - 1];
+}
+
+function getTotalLength(points) {
+  let total = 0;
+  for (let i = 0; i < points.length - 1; i++) {
+    const dx = points[i+1][1] - points[i][1];
+    const dy = points[i+1][0] - points[i][0];
+    total += Math.sqrt(dx*dx + dy*dy);
+  }
+  return total;
+}
+
+function startAnimation() {
+  if (allPathPoints.length < 2) return;
+
+  const totalLen = getTotalLength(allPathPoints);
+  const duration = totalLen / SPEED;
+
+  animMarker = L.circleMarker(allPathPoints[0], {
+    radius: 7,
+    fillColor: '#fff',
+    fillOpacity: 1,
+    color: '#FF6B6B',
+    weight: 3,
+  }).addTo(map);
+
+  function animate(timestamp) {
+    if (!animStart) animStart = timestamp;
+    const elapsed = timestamp - animStart;
+    const progress = (elapsed % duration) / duration;
+    const dist = progress * totalLen;
+    const pos = getPointAtDistance(allPathPoints, dist);
+    animMarker.setLatLng(pos);
+
+    // Update color based on which day segment we're in
+    let accumulated = 0;
+    const dayOrder = Object.keys(DAY_COLORS);
+    for (const day of dayOrder) {
+      const dayPts = window._dayPathPoints[day];
+      if (!dayPts) continue;
+      const dayLen = getTotalLength(dayPts);
+      if (accumulated + dayLen >= dist) {
+        animMarker.setStyle({ color: DAY_COLORS[day] });
+        break;
+      }
+      accumulated += dayLen;
+    }
+
+    animFrame = requestAnimationFrame(animate);
+  }
+
+  animFrame = requestAnimationFrame(animate);
+}
+
+</script>
+</body>
+</html>
